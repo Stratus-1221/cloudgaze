@@ -707,6 +707,26 @@
   .tinfo { color: #777; font-size: 0.9em; font-variant-numeric: tabular-nums; min-height: 1.2em; }
   .tstr { display: flex; gap: 0.9em; color: #555; letter-spacing: 0.05em; }
   .tstr span.on { color: #ddd; }
+  /* spotify */
+  .sp { flex: 1; display: flex; gap: 0.9em; min-height: 0; align-items: center; }
+  .sp img { height: 100%; max-height: 9em; aspect-ratio: 1; object-fit: cover; border-radius: 6px; flex: none; background: #111; }
+  .sp img[hidden] { display: none; }
+  .spr { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.35em; }
+  .spt { color: var(--c2); font-size: 1.15em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .spa { color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .spbar { height: 2px; background: var(--track, #222); border-radius: 1px; overflow: hidden; margin-top: 0.3em; }
+  .spbar i { display: block; height: 100%; background: #bbb; width: 0; }
+  .sptm { display: flex; justify-content: space-between; color: #555; font-size: 0.78em; font-variant-numeric: tabular-nums; }
+  .spc { display: flex; align-items: center; gap: 1.1em; margin-top: 0.2em; }
+  .spc .mini { font-size: 1.25em; padding: 0; line-height: 1; }
+  .spc .mini svg { width: 1em; height: 1em; display: block; fill: currentColor; }
+  .spc input[type=range] { flex: 1; min-width: 3em; max-width: 8em; accent-color: #999; height: 2px; }
+  .spdev { color: #555; font-size: 0.78em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .spmsg { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 0.6em; color: #777; }
+  .spmsg .btn { font-size: 0.95em; }
+  .sphelp { color: #888; line-height: 1.6; font-size: 12px; }
+  .sphelp code { color: #ccc; background: #151515; padding: 1px 4px; border-radius: 3px; user-select: all; word-break: break-all; }
+  body.text-bright .spa, body.text-bright .sptm, body.text-bright .spdev, body.text-bright .spmsg { color: #c4c4c4; }
   /* quick links */
   .lks { flex: 1; overflow-y: auto; scrollbar-width: none; min-height: 0; display: flex; flex-direction: column; gap: 0.15em; }
   .lks.chips { flex-direction: row; flex-wrap: wrap; align-content: flex-start; gap: 0.45em; }
@@ -1117,6 +1137,7 @@ const DEFAULT_LAYOUT = [
   { id: 'links',       type: 'links',     c: 0,  r: 5, w: 3, h: 3, on: false },
   { id: 'flash-1',     type: 'flash',     c: 0,  r: 0, w: 3, h: 4, on: false },
   { id: 'poly',        type: 'poly',      c: 9,  r: 3, w: 3, h: 3, on: false },
+  { id: 'spotify',     type: 'spotify',   c: 3,  r: 6, w: 6, h: 2, on: false },
 ];
 const DEFAULTS = {
   day: 'A', anchorDate: null, autoAB: true, ab: true,
@@ -2050,6 +2071,96 @@ function polyStop() {
   polyPaint();
 }
 function polyPaint() { for (const r of refs) if (r.it.type === 'poly' && r.redraw) r.redraw(); }
+
+// Spotify: controls whatever is playing on your Spotify account (any device), using Spotify's Web API.
+// Sign-in uses PKCE, so no server or secret is needed. Tokens stay on this device; only the Client ID syncs.
+var spot = { tok: null, st: null, at: 0, timer: null, busy: false, err: '', wait: 0 };
+const SP_SCOPES = 'user-read-playback-state user-modify-playback-state user-read-currently-playing';
+const spRedirect = () => location.origin + location.pathname;
+const spLoad = () => { try { return JSON.parse(localStorage.getItem('clockSpotify')) || null; } catch (e) { return null; } };
+const spSave = t => { spot.tok = t; try { t ? localStorage.setItem('clockSpotify', JSON.stringify(t)) : localStorage.removeItem('clockSpotify'); } catch (e) {} };
+const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+async function spConnect() {
+  const id = (settings.spotifyClient || '').trim();
+  if (!id) { toast('Paste your Spotify Client ID in the widget settings first', 3); return; }
+  if (location.protocol === 'file:') { toast('Spotify sign-in works on the website version of glance', 3); return; }
+  const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
+  const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+  const state = b64url(crypto.getRandomValues(new Uint8Array(12)));
+  try { sessionStorage.setItem('clockSpotifyPkce', JSON.stringify({ verifier, state })); } catch (e) {}
+  location.href = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({
+    client_id: id, response_type: 'code', redirect_uri: spRedirect(), code_challenge_method: 'S256', code_challenge: challenge, scope: SP_SCOPES, state });
+}
+async function spToken(body) {
+  const r = await fetch('https://accounts.spotify.com/api/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(j.error_description || j.error || 'token'), { code: j.error });
+  return j;
+}
+async function spFinishLogin() {
+  const q = new URLSearchParams(location.search);
+  if (!q.has('code') && !q.has('error')) return;
+  let pk = null; try { pk = JSON.parse(sessionStorage.getItem('clockSpotifyPkce')); sessionStorage.removeItem('clockSpotifyPkce'); } catch (e) {}
+  history.replaceState(null, '', location.pathname + location.hash);
+  if (q.get('error')) { toast('Spotify sign-in was cancelled', 2.5); return; }
+  if (!pk || pk.state !== q.get('state')) return;
+  try {
+    const j = await spToken({ grant_type: 'authorization_code', code: q.get('code'), redirect_uri: spRedirect(), client_id: settings.spotifyClient, code_verifier: pk.verifier });
+    spSave({ access: j.access_token, refresh: j.refresh_token, exp: Date.now() + (j.expires_in - 60) * 1000 });
+    toast('Spotify connected', 2);
+    spot.err = ''; spPoll();
+  } catch (e) { spot.err = 'Couldn’t connect to Spotify. Check the Client ID and redirect URI.'; spPaint(); }
+}
+async function spAccess() {
+  const t = spot.tok || (spot.tok = spLoad());
+  if (!t) return null;
+  if (Date.now() < t.exp) return t.access;
+  try {
+    const j = await spToken({ grant_type: 'refresh_token', refresh_token: t.refresh, client_id: settings.spotifyClient });
+    spSave({ access: j.access_token, refresh: j.refresh_token || t.refresh, exp: Date.now() + (j.expires_in - 60) * 1000 });
+    return spot.tok.access;
+  } catch (e) {
+    if (e.code === 'invalid_grant' || e.code === 'invalid_client') { spSave(null); spot.err = 'Spotify signed you out. Connect again.'; }
+    return null;
+  }
+}
+async function spApi(method, path, retry = true) {
+  const tok = await spAccess();
+  if (!tok) return { status: 0 };
+  const r = await fetch('https://api.spotify.com/v1' + path, { method, headers: { Authorization: 'Bearer ' + tok } });
+  if (r.status === 401 && retry) { if (spot.tok) spot.tok.exp = 0; return spApi(method, path, false); }
+  if (r.status === 429) spot.wait = Date.now() + 1000 * Number(r.headers.get('Retry-After') || 10);
+  let j = null;
+  if (r.status !== 204) j = await r.json().catch(() => null);
+  return { status: r.status, j };
+}
+const spOn = () => refs.some(r => r.it.type === 'spotify');
+async function spPoll() {
+  clearTimeout(spot.timer);
+  if (!spOn() || !(spot.tok || spLoad())) { spPaint(); return; }
+  if (document.hidden || Date.now() < spot.wait) { spot.timer = setTimeout(spPoll, 5000); return; }
+  try {
+    const { status, j } = await spApi('GET', '/me/player?additional_types=episode');
+    if (status === 200 && j) { spot.st = j; spot.at = Date.now(); spot.err = ''; }
+    else if (status === 204) { spot.st = null; spot.err = ''; }
+    else if (status === 403) spot.err = 'Spotify says this account can’t be used here. The app may need you added as a user.';
+  } catch (e) { spot.err = 'Can’t reach Spotify right now'; }
+  spPaint();
+  spot.timer = setTimeout(spPoll, spot.st && spot.st.is_playing ? 4000 : 10000);
+}
+async function spCmd(method, path, optimistic) {
+  if (optimistic && spot.st) { optimistic(spot.st); spot.at = Date.now(); spPaint(); }
+  try {
+    const { status } = await spApi(method, path);
+    if (status === 404) toast('Open Spotify on a device and start a song first', 2.5);
+    else if (status === 403) toast('Spotify only allows this with Premium', 2.5);
+  } catch (e) { toast('Can’t reach Spotify right now', 2); }
+  clearTimeout(spot.timer); spot.timer = setTimeout(spPoll, 600);
+}
+function spPaint() { for (const r of refs) if (r.it.type === 'spotify' && r.paint) r.paint(); }
+const spTime = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+addEventListener('visibilitychange', () => { if (!document.hidden && spOn()) spPoll(); });
+setInterval(() => { if (spot.st && spot.st.is_playing && !document.hidden) for (const r of refs) if (r.it.type === 'spotify' && r.tickBar) r.tickBar(); }, 1000);
 
 // tuner engine
 var tuner = { on: null, stream: null, ctx: null, an: null, buf: null, timer: null, hist: [], last: 0, heard: 0 };
@@ -3782,6 +3893,84 @@ const TYPES = {
     },
   },
 
+  spotify: {
+    name: 'Spotify', card: true,
+    build(ref) {
+      const head = mk('div', 'ct');
+      head.append(mk('span', null, 'Spotify'));
+      ref.dev = mk('span', 'spdev');
+      head.append(ref.dev);
+      ref.box = mk('div', 'sp');
+      ref.art = mk('img'); ref.art.alt = ''; ref.art.hidden = true;
+      ref.art.onerror = () => { ref.art.hidden = true; };
+      const right = mk('div', 'spr');
+      ref.t = mk('div', 'spt'); ref.a = mk('div', 'spa');
+      ref.bar = mk('div', 'spbar'); ref.fill = mk('i'); ref.bar.append(ref.fill);
+      ref.tm = mk('div', 'sptm'); ref.tm1 = mk('span'); ref.tm2 = mk('span'); ref.tm.append(ref.tm1, ref.tm2);
+      const ctl = mk('div', 'spc');
+      const prev = mk('button', 'mini'), next = mk('button', 'mini');
+      ref.pp = mk('button', 'mini');
+      prev.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg>'; next.innerHTML = '<svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg>';
+      prev.title = 'Previous'; next.title = 'Next';
+      ref.vol = mk('input'); ref.vol.type = 'range'; ref.vol.min = 0; ref.vol.max = 100; ref.vol.title = 'Volume';
+      ctl.append(prev, ref.pp, next, ref.vol);
+      right.append(ref.t, ref.a, ref.bar, ref.tm, ctl);
+      ref.box.append(ref.art, right);
+      ref.msg = mk('div', 'spmsg');
+      ref.inner.append(head, ref.box, ref.msg);
+      const stop = e => e.stopPropagation();
+      [prev, next, ref.pp, ref.vol].forEach(x => x.addEventListener('pointerdown', stop));
+      prev.onclick = e => { stop(e); spCmd('POST', '/me/player/previous'); };
+      next.onclick = e => { stop(e); spCmd('POST', '/me/player/next'); };
+      ref.pp.onclick = e => {
+        stop(e);
+        const playing = spot.st && spot.st.is_playing;
+        spCmd('PUT', playing ? '/me/player/pause' : '/me/player/play', st => { st.is_playing = !playing; });
+      };
+      let vt = null;
+      ref.vol.oninput = () => { clearTimeout(vt); vt = setTimeout(() => spCmd('PUT', '/me/player/volume?volume_percent=' + ref.vol.value, st => { if (st.device) st.device.volume_percent = Number(ref.vol.value); }), 250); };
+      ref.tickBar = () => {
+        const st = spot.st, it = st && st.item;
+        if (!it) return;
+        const pos = Math.min(it.duration_ms, st.progress_ms + (st.is_playing ? Date.now() - spot.at : 0));
+        ref.fill.style.width = (pos / it.duration_ms * 100) + '%';
+        setText(ref.tm1, spTime(pos)); setText(ref.tm2, spTime(it.duration_ms));
+      };
+      ref.paint = () => {
+        const connected = !!(spot.tok || spLoad()), st = spot.st, it = st && st.item;
+        const showMsg = (text, btnText, fn) => {
+          ref.box.style.display = 'none'; ref.msg.style.display = ''; ref.msg.innerHTML = '';
+          ref.msg.append(mk('div', null, text));
+          if (btnText) { const b = mk('button', 'btn', btnText); b.onclick = e => { stop(e); fn(); }; b.addEventListener('pointerdown', stop); ref.msg.append(b); }
+          setText(ref.dev, '');
+        };
+        if (!settings.spotifyClient) return showMsg('Set up Spotify in this widget’s settings (press E, then its gear).');
+        if (!connected) return showMsg(spot.err || 'Connect your Spotify account to see and control what’s playing.', 'Connect Spotify', spConnect);
+        if (spot.err && !st) return showMsg(spot.err, 'Try again', spPoll);
+        if (!it) return showMsg('Nothing playing. Start a song in Spotify on any device.');
+        ref.msg.style.display = 'none'; ref.box.style.display = '';
+        setText(ref.t, it.name);
+        setText(ref.a, it.artists ? it.artists.map(x => x.name).join(', ') : (it.show ? it.show.name : ''));
+        const imgs = (it.album && it.album.images) || it.images || [];
+        const src = imgs.length ? (imgs[1] || imgs[0]).url : '';
+        ref.art.hidden = !src || !opt(ref.it, 'art', true);
+        if (src && ref.art.getAttribute('src') !== src) ref.art.src = src;
+        ref.pp.innerHTML = st.is_playing ? '<svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg>';
+        ref.pp.title = st.is_playing ? 'Pause' : 'Play';
+        const dv = st.device || {};
+        const vOk = opt(ref.it, 'volume', true) && dv.supports_volume !== false && dv.volume_percent != null;
+        ref.vol.style.display = vOk ? '' : 'none';
+        if (vOk && document.activeElement !== ref.vol) ref.vol.value = dv.volume_percent;
+        setText(ref.dev, opt(ref.it, 'device', true) && dv.name ? dv.name : '');
+        const prog = opt(ref.it, 'progress', true);
+        ref.bar.style.display = ref.tm.style.display = prog ? '' : 'none';
+        ref.tickBar();
+      };
+      ref.paint();
+      spPoll();
+    },
+  },
+
   links: {
     name: 'Quick links', card: true,
     data: { items: [{ id: 'k1', n: 'Canvas', u: 'https://canvas.instructure.com' }, { id: 'k2', n: 'Gmail', u: 'https://mail.google.com' }, { id: 'k3', n: 'Docs', u: 'https://docs.google.com' }] },
@@ -4867,6 +5056,28 @@ function widgetOptions(it) {
         optA4(it),
         mk('div', 'sub', 'The mic only listens while the tuner is on. It turns off when you leave the page or after 5 quiet minutes.'));
       break;
+    case 'spotify': {
+      const idIn = mk('input');
+      idIn.type = 'text'; idIn.placeholder = 'Client ID'; idIn.value = settings.spotifyClient || '';
+      idIn.style.width = '210px'; idIn.spellcheck = false;
+      idIn.onchange = () => { const v = idIn.value.trim(); if (v !== (settings.spotifyClient || '')) { settings.spotifyClient = v; spSave(null); spot.st = null; save(); spPaint(); } };
+      idIn.onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') idIn.blur(); };
+      const help = mk('div', 'sphelp');
+      help.innerHTML = 'One-time setup (needs Premium):<br>1. Go to <b>developer.spotify.com/dashboard</b> and click <b>Create app</b>.<br>' +
+        '2. Any name and description. For <b>Redirect URI</b> add <code>' + spRedirect().replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</code> and check <b>Web API</b>.<br>' +
+        '3. Open the app\u2019s settings, copy the <b>Client ID</b> and paste it here.<br>4. Click <b>Connect Spotify</b> on the widget.<br>' +
+        'Friends can use your Client ID too: add their Spotify email under <b>User Management</b> (up to 5 people).';
+      const connected = !!(spot.tok || spLoad());
+      rows.push(
+        optNode('Client ID', idIn), help,
+        optBtn('Account', connected ? 'Disconnect' : 'Connect', () => { if (connected) { spSave(null); spot.st = null; afterOptChange(); spPaint(); } else spConnect(); }),
+        optSeg('Cover art', ONOFF, O('art', true), S('art')),
+        optSeg('Progress bar', ONOFF, O('progress', true), S('progress')),
+        optSeg('Volume slider', ONOFF, O('volume', true), S('volume')),
+        optSeg('Device name', ONOFF, O('device', true), S('device')),
+        mk('div', 'sub', 'Controls Spotify wherever it\u2019s playing: this Chromebook, your phone or another computer. Sign-in stays on this device.'));
+      break;
+    }
     case 'links':
       rows.push(
         optSeg('Look', [['list', 'List'], ['chips', 'Buttons']], O('look', 'list'), S('look')),
@@ -5979,8 +6190,9 @@ function openFeedback() {
 $('fbBtn').onclick = e => { e.stopPropagation(); openFeedback(); };
 
 // what's new
-const VERSION = '1.9';
+const VERSION = '1.10';
 const CHANGELOG = [
+  { v: '1.10', items: ['Spotify widget: what\u2019s playing, play/pause, skip and volume on any of your devices', 'Double-click homework to change its name, class or due date', 'Clear done button for homework', 'Signing in lets you pick this computer\u2019s clock, your account\u2019s, or both'] },
   { v: '1.9', items: ['Metronome with tap tempo', 'Tuner for viola, violin, cello, bass and guitar', 'Quick links', 'Flashcards', 'Weather alert banner for warnings near you', 'Polyrhythm trainer', 'New setup with presets and sign-in, plus a guided tour (Settings → Help → Tour)', 'Metronome and polyrhythm vibrate on phones', 'Music preset', 'Sync button, and sync merges changes from all your computers', 'Version number at the bottom of Settings'] },
   { v: '1.8', items: ['Share a link to your layout, or a code for your bell schedule', 'Send feedback from Settings', 'Phone layout: widgets stack in one column', 'Ctrl+K searches every widget and setting', 'Fine grid for exact placement', 'A dozen fonts', 'Your own photo as the background', 'Seasonal effects: leaves, snow, petals, fireflies', 'Each layout can have its own background', 'Ring look for the class countdown', 'Alarm sounds you can pick'] },
   { v: '1.7', items: ['Bright text mode', 'On this day skips grim events and can show birthdays', 'Today’s schedule, day timeline, today agenda, search box, daily checklist, message board, On this day widgets'] },
@@ -6692,6 +6904,7 @@ renderLayoutControls();
 if (settings.loc) { lat = settings.loc.lat; lon = settings.loc.lon; loadWeather(); }
 else useAutoLocation();
 setInterval(() => { if (!document.hidden) loadWeather(); }, 30 * 60 * 1000);
+spFinishLogin();
 cloudInit().then(() => { if (!settings.setupDone && !cloud.user && document.body.classList.contains('setup')) renderSetup(); });
 if (!settings.setupDone) openSetup();
 else if (settings.seenVersion !== VERSION && !location.hash.startsWith('#layout=')) setTimeout(() => { if (!document.body.classList.contains('gmodal')) showWhatsNew(false); }, 1200);
