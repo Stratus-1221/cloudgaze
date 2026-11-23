@@ -1947,6 +1947,54 @@ function playSound(name = 'beep') {
 }
 const beep = () => playSound('beep');
 
+// double-click editor shared by list widgets. fields: [{ k, type: 'text'|'date'|'time'|'select', v, ph, opts, full }]
+function inlineEdit(row, fields, save_, done_) {
+  const box = mk('div', 'hwedit');
+  const line = mk('div', 'r');
+  const els = {};
+  for (const f of fields) {
+    let el;
+    if (f.type === 'select') {
+      el = mk('select');
+      f.opts.forEach(([v, l]) => { const o = mk('option', null, l); o.value = v; el.append(o); });
+      el.value = f.v == null ? '' : String(f.v);
+    } else {
+      el = mk('input', f.type === 'text' ? 't' : '');
+      el.type = f.type; el.value = f.v || ''; if (f.ph) el.placeholder = f.ph;
+    }
+    els[f.k] = el;
+    (f.full ? box : line).append(el);
+  }
+  const ok = mk('button', 'mini', 'Save');
+  line.append(ok);
+  box.append(line);
+  row.replaceWith(box);
+  let done = false;
+  const finish = keep => {
+    if (done) return; done = true;
+    if (keep) { const vals = {}; for (const k in els) vals[k] = els[k].value; save_(vals); }
+    box.remove();
+    done_();
+  };
+  ok.onclick = e => { e.stopPropagation(); finish(true); };
+  box.addEventListener('pointerdown', e => e.stopPropagation());
+  box.addEventListener('dblclick', e => e.stopPropagation());
+  box.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter') finish(true);
+    if (e.key === 'Escape') finish(false);
+  });
+  box.addEventListener('focusout', () => setTimeout(() => { if (!box.contains(document.activeElement)) finish(true); }, 0));
+  const f0 = box.querySelector('input, select');
+  if (f0) { f0.focus(); if (f0.select) f0.select(); }
+  return box;
+}
+const repeatOpts = (cur, first) => {
+  const o = [...first, ['daily', 'Every day'], ['school', 'School days']];
+  if (settings.ab) o.push(['A', 'A days'], ['B', 'B days']);
+  if (cur === 'days') o.push(['days', 'Same days as before']);
+  return o;
+};
 function editableTitle(ref, d, fallback) {
   const t = mk('span', null, d.title || fallback);
   t.contentEditable = 'true';
@@ -2586,7 +2634,12 @@ const TYPES = {
             clearTimeout(clickTimer);
             clickTimer = setTimeout(toggle, 230);
           };
-          tx.ondblclick = () => { clearTimeout(clickTimer); editText(item, tx); };
+          tx.ondblclick = e => {
+            e.stopPropagation(); clearTimeout(clickTimer);
+            inlineEdit(row, [{ k: 't', type: 'text', v: item.t, ph: 'Item', full: true }, { k: 'due', type: 'date', v: item.due || '' }],
+              v => { if (v.t.trim()) item.t = v.t.trim(); else d.items.splice(d.items.indexOf(item), 1); if (v.due) item.due = v.due; else delete item.due; save(); },
+              () => draw());
+          };
           const dueSlot = mk('span', 'due');
           if (item.due) {
             const [label, cls] = dueLabel(item.due);
@@ -2859,6 +2912,13 @@ const TYPES = {
         const when = fmtUntil(new Date(e.d) - now);
         const date = new Date(e.d).toLocaleDateString([], { month: 'short', day: 'numeric' });
         row.append(mk('span', 'nm', e.n), mk('span', 'when', showDate ? `${date} · ${when}` : when), del);
+        row.title = 'Double-click to edit';
+        row.ondblclick = ev => {
+          ev.stopPropagation();
+          inlineEdit(row, [{ k: 'n', type: 'text', v: e.n, ph: 'Event name', full: true }, { k: 'd', type: 'date', v: e.d.slice(0, 10) }, { k: 't', type: 'time', v: e.d.slice(11, 16) }],
+            v => { if (v.n.trim()) e.n = v.n.trim(); if (v.d) e.d = v.d + 'T' + (v.t || '00:00'); save(); },
+            () => { ref.k = ''; TYPES.events.update(ref, new Date()); });
+        };
         ref.list.append(row);
       });
     },
@@ -2918,6 +2978,13 @@ const TYPES = {
         del.onclick = () => { d.list.splice(i, 1); save(); ref.k = ''; TYPES.world.update(ref, new Date()); };
         const extra = [showDay && theirDay !== ourDay ? theirDay : '', showDiff ? diff : ''].filter(Boolean).join(' ');
         row.append(mk('span', 'nm', c.label || tzCity(c.zone)), mk('span', 'tm', time), mk('span', 'df', extra), del);
+        row.title = 'Double-click to rename';
+        row.ondblclick = ev => {
+          ev.stopPropagation();
+          inlineEdit(row, [{ k: 'l', type: 'text', v: c.label || tzCity(c.zone), ph: tzCity(c.zone), full: true }],
+            v => { c.label = v.l.trim() || tzCity(c.zone); save(); },
+            () => { ref.k = ''; TYPES.world.update(ref, new Date()); });
+        };
         ref.list.append(row);
       });
     },
@@ -3206,7 +3273,15 @@ const TYPES = {
         st.title = streak ? `${streak} day streak` : '';
         const del = mk('span', 'del', '×');
         del.onclick = () => { if (confirm(`Delete "${h.name}"?`)) { d.list.splice(idx, 1); save(); ref.k = ''; TYPES.habits.update(ref, new Date()); } };
-        row.append(mk('span', 'nm', h.name), sq, st, del);
+        const nm = mk('span', 'nm', h.name);
+        nm.title = 'Double-click to rename';
+        nm.ondblclick = ev => {
+          ev.stopPropagation();
+          inlineEdit(row, [{ k: 'n', type: 'text', v: h.name, ph: 'Habit', full: true }],
+            v => { if (v.n.trim()) h.name = v.n.trim(); save(); },
+            () => { ref.k = ''; TYPES.habits.update(ref, new Date()); });
+        };
+        row.append(nm, sq, st, del);
         ref.list.append(row);
       });
     },
@@ -3375,6 +3450,17 @@ const TYPES = {
         del.title = 'Delete this reminder';
         del.onclick = () => { if (confirm(`Delete "${r.text}"?`)) { d.list.splice(d.list.indexOf(r), 1); save(); ref.k = ''; TYPES.reminders.update(ref, new Date()); } };
         row.append(w, mk('span', 'tx', r.text), mk('span', 'rp', remRepeatLabel(r)), del);
+        row.title = 'Double-click to edit';
+        row.ondblclick = ev => {
+          ev.stopPropagation();
+          const box = inlineEdit(row, [{ k: 'text', type: 'text', v: r.text, ph: 'Reminder', full: true }, { k: 'time', type: 'time', v: r.time },
+            { k: 'repeat', type: 'select', v: r.repeat, opts: repeatOpts(r.repeat, [['once', 'One time']]) }, { k: 'date', type: 'date', v: r.date || ymd(new Date()) }],
+            v => { if (v.text.trim()) r.text = v.text.trim(); if (v.time) r.time = v.time; r.repeat = v.repeat; if (v.repeat === 'once') r.date = v.date || ymd(new Date()); save(); },
+            () => { ref.k = ''; TYPES.reminders.update(ref, new Date()); });
+          const sel = box.querySelector('select'), dt = box.querySelector('input[type=date]');
+          const sync = () => { dt.style.display = sel.value === 'once' ? '' : 'none'; };
+          sel.addEventListener('change', sync); sync();
+        };
         ref.list.append(row);
       }
     },
@@ -3480,6 +3566,22 @@ const TYPES = {
         const del = mk('span', 'del', '×');
         del.onclick = () => { d.list.splice(d.list.indexOf(a), 1); save(); ref.k = ''; TYPES.alarms.update(ref, new Date()); };
         row.append(mk('span', 'tm', clockStr(...a.time.split(':').map(Number))), info, sw, del);
+        row.title = 'Double-click to edit';
+        row.ondblclick = ev => {
+          if (ev.target.closest('.sw, .del')) return;
+          ev.stopPropagation();
+          inlineEdit(row, [{ k: 'label', type: 'text', v: a.label, ph: 'Label (optional)', full: true }, { k: 'time', type: 'time', v: a.time },
+            { k: 'repeat', type: 'select', v: a.repeat, opts: repeatOpts(a.repeat, [['once', 'One time']]) },
+            { k: 'sound', type: 'select', v: a.sound || 'beep', opts: SOUNDS }],
+            v => {
+              a.label = v.label.trim();
+              if (v.time) a.time = v.time;
+              a.repeat = v.repeat; a.sound = v.sound;
+              if (a.repeat === 'once') { a.date = alarmOnceDate(a.time); a.on = true; }
+              save();
+            },
+            () => { ref.k = ''; TYPES.alarms.update(ref, new Date()); });
+        };
         ref.list.append(row);
       });
     },
@@ -3549,6 +3651,13 @@ const TYPES = {
         del.title = 'Delete';
         del.onclick = () => { d.blocks.splice(d.blocks.indexOf(x), 1); save(); ref.k = ''; TYPES.planner.update(ref, new Date()); };
         row.append(mk('span', 'tm', `${f(x.start)}–${f(x.end)}`), mk('span', 'tx', x.text), del);
+        row.title = 'Double-click to edit';
+        row.ondblclick = ev => {
+          ev.stopPropagation();
+          inlineEdit(row, [{ k: 'text', type: 'text', v: x.text, ph: 'Homework, practice\u2026', full: true }, { k: 'start', type: 'time', v: x.start }, { k: 'end', type: 'time', v: x.end }],
+            v => { if (v.text.trim()) x.text = v.text.trim(); if (v.start && v.end && v.end > v.start) { x.start = v.start; x.end = v.end; } else if (v.end <= v.start) toast('The end has to be after the start', 2); save(); },
+            () => { ref.k = ''; TYPES.planner.update(ref, new Date()); });
+        };
         if (cur) {
           const toMin = v => { const [h, m] = v.split(':').map(Number); return h * 60 + m; };
           const pb = mk('span', 'pb');
@@ -3753,12 +3862,11 @@ const TYPES = {
           const tx = mk('span', 'tx', item.t);
           let timer = null;
           tx.onclick = () => { clearTimeout(timer); timer = setTimeout(toggle, 230); };
-          tx.ondblclick = () => {
-            clearTimeout(timer);
-            const v = prompt('Edit item', item.t);
-            if (v == null) return;
-            if (v.trim()) item.t = v.trim(); else d.items.splice(idx, 1);
-            save(); ref.redraw();
+          tx.ondblclick = e => {
+            e.stopPropagation(); clearTimeout(timer);
+            inlineEdit(row, [{ k: 't', type: 'text', v: item.t, ph: 'Item', full: true }],
+              v => { if (v.t.trim()) item.t = v.t.trim(); else { d.items.splice(d.items.indexOf(item), 1); d.done = d.done.filter(x => x !== item.id); } save(); },
+              () => ref.redraw());
           };
           const del = mk('span', 'del', '×');
           del.onclick = () => { d.items.splice(idx, 1); d.done = d.done.filter(x => x !== item.id); save(); ref.redraw(); };
@@ -4232,11 +4340,26 @@ const TYPES = {
         pick(c && c.id);
         save(); ref.redraw();
       };
+      ref.card.title = 'Click to flip, double-click to edit this card';
+      let flipTimer = null;
+      ref.card.ondblclick = e => {
+        e.stopPropagation(); clearTimeout(flipTimer);
+        const c = d.cards.find(x => x.id === d.cur);
+        if (!c || document.body.classList.contains('layout-edit')) return;
+        const holder = mk('div'); holder.style.cssText = 'flex:1;display:flex;flex-direction:column;justify-content:center';
+        ref.card.replaceWith(holder); const slot = mk('div'); holder.append(slot);
+        btns.style.visibility = 'hidden';
+        inlineEdit(slot, [{ k: 'f', type: 'text', v: c.f, ph: 'Front', full: true }, { k: 'b', type: 'text', v: c.b, ph: 'Back' }],
+          v => { if (v.f.trim()) c.f = v.f.trim(); if (v.b.trim()) c.b = v.b.trim(); save(); },
+          () => { holder.replaceWith(ref.card); ref.redraw(); });
+      };
       ref.card.onclick = e => {
         if (document.body.classList.contains('layout-edit')) return;
+        if (e.detail > 1) return;
         if (!d.cards.length) { add.classList.add('show'); ta.focus(); return; }
         if (!left().length) { d.cards.forEach(c => c.k = false); pick(); save(); ref.redraw(); return; }
-        d.flip = !d.flip; saveSoon(); ref.redraw();
+        clearTimeout(flipTimer);
+        flipTimer = setTimeout(() => { d.flip = !d.flip; saveSoon(); ref.redraw(); }, 220);
       };
       again.onclick = e => { e.stopPropagation(); next(false); };
       got.onclick = e => { e.stopPropagation(); next(true); };
@@ -5762,6 +5885,7 @@ function render() {
     const show = opt(ref.it, 'show', 'always');
     const hide = (show === 'days' && !st.schoolDay) || (show === 'hours' && !st.hours);
     if (ref.root.classList.contains('offhide') !== hide) ref.root.classList.toggle('offhide', hide);
+    if (ref.inner.querySelector('.hwedit') && ref.inner.contains(document.activeElement)) continue; // editing in place
     TYPES[ref.it.type].update?.(ref, now, st);
   }
   const resetFit = now.getMinutes() !== lastFitMinute;
