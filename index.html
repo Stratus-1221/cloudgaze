@@ -2134,7 +2134,33 @@ var spot = { tok: null, st: null, at: 0, timer: null, busy: false, err: '', wait
 const SP_SCOPES = 'user-read-playback-state user-modify-playback-state user-read-currently-playing streaming user-read-email user-read-private';
 const spRedirect = () => location.origin + location.pathname;
 const spLoad = () => { try { return JSON.parse(localStorage.getItem('clockSpotify')) || null; } catch (e) { return null; } };
-const spSave = t => { spot.tok = t; try { t ? localStorage.setItem('clockSpotify', JSON.stringify(t)) : localStorage.removeItem('clockSpotify'); } catch (e) {} };
+const spSaveLocal = t => { spot.tok = t; try { t ? localStorage.setItem('clockSpotify', JSON.stringify(t)) : localStorage.removeItem('clockSpotify'); } catch (e) {} };
+const spSave = t => { spSaveLocal(t); spCloudPut(t); };
+// Spotify sign-in shared through your glance account, so new devices are connected as soon as you sign in to glance.
+// Stored next to your clock in your own Firestore document (only you can read it). Not part of backups or share codes.
+function spCloudPut(t) {
+  if (!cloud.user || !cloud.fb) return;
+  const v = t ? { access: t.access, refresh: t.refresh, exp: t.exp, scope: t.scope || '', client: settings.spotifyClient || '' } : null;
+  spot.cloudTok = v;
+  cloud.fb.setDoc(cloud.fb.doc(cloud.db, 'users', cloud.user.uid), { spotify: v }, { merge: true }).catch(() => {});
+}
+async function spCloudFetch() {
+  if (!cloud.user || !cloud.fb) return null;
+  try { const snap = await cloud.fb.getDoc(cloud.fb.doc(cloud.db, 'users', cloud.user.uid)); const v = snap.exists() ? snap.data().spotify : undefined; spot.cloudTok = v; return v || null; }
+  catch (e) { return null; }
+}
+// a newer sign-in arrived from another device (or you disconnected everywhere)
+function spCloudUpdate(c) {
+  spot.cloudTok = c;
+  const local = spot.tok || spLoad();
+  if (c === null) { if (local) { spSaveLocal(null); spot.st = null; spPaint(); } return; }
+  if (!c || !c.refresh || (settings.spotifyClient && c.client && c.client !== settings.spotifyClient)) return;
+  if (!local || c.exp > local.exp || c.refresh !== local.refresh && c.exp >= local.exp) {
+    if (local && local.refresh === c.refresh && local.access === c.access) return;
+    spSaveLocal({ access: c.access, refresh: c.refresh, exp: c.exp, scope: c.scope || '' });
+    if (!local) { spot.err = ''; spPoll(); }
+  }
+}
 const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 async function spConnect() {
   const id = (settings.spotifyClient || '').trim();
@@ -2167,8 +2193,10 @@ async function spFinishLogin() {
     spot.err = ''; spPoll();
   } catch (e) { spot.err = 'Couldn’t connect to Spotify. Check the Client ID and redirect URI.'; spPaint(); }
 }
-async function spAccess() {
-  const t = spot.tok || (spot.tok = spLoad());
+async function spAccess(again) {
+  let t = spot.tok || (spot.tok = spLoad());
+  const c = spot.cloudTok;
+  if (c && c.refresh && (!t || c.exp > t.exp)) { spSaveLocal({ access: c.access, refresh: c.refresh, exp: c.exp, scope: c.scope || '' }); t = spot.tok; }
   if (!t) return null;
   if (Date.now() < t.exp) return t.access;
   try {
@@ -2176,7 +2204,12 @@ async function spAccess() {
     spSave({ access: j.access_token, refresh: j.refresh_token || t.refresh, exp: Date.now() + (j.expires_in - 60) * 1000, scope: j.scope || t.scope || '' });
     return spot.tok.access;
   } catch (e) {
-    if (e.code === 'invalid_grant' || e.code === 'invalid_client') { spSave(null); spot.err = 'Spotify signed you out. Connect again.'; }
+    if (e.code === 'invalid_grant' || e.code === 'invalid_client') {
+      // another device may have just renewed it: use the newest one from your account
+      const fresh = !again && await spCloudFetch();
+      if (fresh && fresh.refresh && fresh.refresh !== t.refresh) { spSaveLocal({ access: fresh.access, refresh: fresh.refresh, exp: fresh.exp, scope: fresh.scope || '' }); return spAccess(true); }
+      spSave(null); spot.err = 'Spotify signed you out. Connect again.';
+    }
     return null;
   }
 }
@@ -5357,6 +5390,7 @@ function widgetOptions(it) {
       const connected = !!(spot.tok || spLoad());
       rows.push(
         optNode('Client ID', idIn), help,
+        mk('div', 'sub', cloud.user ? 'Your Spotify sign-in syncs through your glance account, so your other devices connect by themselves. Disconnect signs out everywhere.' : 'Sign in to glance and your Spotify connection carries over to your other devices.'),
         optBtn('Account', connected ? 'Disconnect' : 'Connect', () => { if (connected) { spSave(null); spot.st = null; afterOptChange(); spPaint(); } else spConnect(); }),
         optSeg('Play music in glance (beta)', ONOFF, O('here', false), v => { setOpt(it, 'here', v); if (!v) spStopPlayer(); setTimeout(spPoll, 50); }),
         mk('div', 'sub', 'glance becomes its own Spotify speaker, so you don\u2019t need the Spotify app open. It plays sound from this tab. Spotify may not allow it for new personal apps; if so, everything else still works.'),
@@ -5364,7 +5398,7 @@ function widgetOptions(it) {
         optSeg('Progress bar', ONOFF, O('progress', true), S('progress')),
         optSeg('Volume slider', ONOFF, O('volume', true), S('volume')),
         optSeg('Device name', ONOFF, O('device', true), S('device')),
-        mk('div', 'sub', 'Controls Spotify wherever it\u2019s playing: this Chromebook, your phone or another computer. Sign-in stays on this device.'));
+        mk('div', 'sub', 'Controls Spotify wherever it\u2019s playing: this Chromebook, your phone or another computer.'));
       break;
     }
     case 'links':
@@ -7005,7 +7039,7 @@ async function syncOnce(force) {
       const remote = data.settings || null;
       try { rStamps = JSON.parse(data.stamps || '{}'); } catch (e) { rStamps = {}; }
       result = 'same'; target = local;
-      const write = json => tx.set(ref, { settings: json, stamps: JSON.stringify(maxStamps(editStamps, rStamps)), updated: Date.now(), device: cloud.device });
+      const write = json => tx.set(ref, { settings: json, stamps: JSON.stringify(maxStamps(editStamps, rStamps)), updated: Date.now(), device: cloud.device }, { merge: true });
       if (!remote) { write(local); result = 'pushed'; return; }
       if (remote === local) return;
       const localChanged = base == null || local !== base, remoteChanged = base == null || remote !== base;
@@ -7070,6 +7104,8 @@ async function cloudStart(user) {
   } catch (e) { setAcctInfo('Not synced'); }
   cloud.unsub = onSnapshot(ref, snap => {
     const r = snap.data();
+    if (r && 'spotify' in r) spCloudUpdate(r.spotify);
+    else if (r && (spot.tok || spLoad()) && spot.cloudTok === undefined) { spot.cloudTok = null; spCloudPut(spot.tok || spLoad()); } // share a sign-in made before syncing existed
     if (!r || !r.settings || r.settings === getBase() || r.settings === settingsJSON()) return;
     sync().catch(() => {});
   });
