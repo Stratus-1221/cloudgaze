@@ -2152,7 +2152,7 @@ async function spPoll() {
   if (document.hidden || Date.now() < spot.wait) { spot.timer = setTimeout(spPoll, 5000); return; }
   try {
     const { status, j } = await spApi('GET', '/me/player?additional_types=episode');
-    if (status === 200 && j) { spot.st = j; spot.at = Date.now(); spot.err = ''; if (j.device && j.device.id) { spot.lastDev = j.device.id; try { localStorage.setItem('clockSpotifyDev', j.device.id); } catch (e) {} } }
+    if (status === 200 && j) { spot.st = j; spot.at = Date.now(); spot.err = ''; if (j.device && j.device.id && j.device.id !== spot.sdkDev) { spot.lastDev = j.device.id; spot.lastDevName = j.device.name; try { localStorage.setItem('clockSpotifyDev', j.device.id); } catch (e) {} } }
     else if (status === 204) { spot.st = null; spot.err = ''; }
     else if (status === 403) spot.err = 'Spotify says this account can’t be used here. The app may need you added as a user.';
   } catch (e) { spot.err = 'Can’t reach Spotify right now'; }
@@ -2222,6 +2222,18 @@ function spStopPlayer() {
   clearTimeout(spot.sdkTimer);
   if (spot.player) { try { spot.player.disconnect(); } catch (e) {} }
   spot.player = null; spot.sdkDev = null; spot.sdkLoading = false; spot.sdkErr = '';
+}
+// move the music from glance back to your Spotify app
+async function spPlayBack() {
+  const { status, j } = await spApi('GET', '/me/player/devices');
+  const list = (status === 200 && j && j.devices || []).filter(d => d.id !== spot.sdkDev);
+  const last = spot.lastDev || lsGet('clockSpotifyDev');
+  const d = list.find(x => x.id === last) || list.find(x => /computer|chromebook/i.test(x.type + ' ' + x.name)) || list[0];
+  if (!d) { toast('Open the Spotify app first, then try again', 3); return; }
+  const r = await spApi('PUT', '/me/player', true, { device_ids: [d.id], play: !!(spot.st && spot.st.is_playing) });
+  if (r.status === 404) toast('Open the Spotify app first, then try again', 3);
+  else toast('Moved to ' + d.name, 1.5);
+  clearTimeout(spot.timer); spot.timer = setTimeout(spPoll, 800);
 }
 async function spPlayHere() {
   if (!spot.sdkDev) return;
@@ -3999,7 +4011,11 @@ const TYPES = {
       ref.here.title = 'Move the music to glance';
       ref.here.onclick = e => { e.stopPropagation(); spPlayHere(); };
       ref.here.addEventListener('pointerdown', e => e.stopPropagation());
-      hr.append(ref.dev, ref.here);
+      ref.back = mk('button', 'mini', 'Back to Spotify');
+      ref.back.title = 'Move the music back to your Spotify app';
+      ref.back.onclick = e => { e.stopPropagation(); spPlayBack(); };
+      ref.back.addEventListener('pointerdown', e => e.stopPropagation());
+      hr.append(ref.dev, ref.here, ref.back);
       head.append(hr);
       ref.inner.addEventListener('click', spActivate);
       ref.box = mk('div', 'sp');
@@ -4077,7 +4093,7 @@ const TYPES = {
           if (btnText) { const b = mk('button', 'btn', btnText); b.onclick = e => { stop(e); fn(); }; b.addEventListener('pointerdown', stop); ref.msg.append(b); }
           setText(ref.dev, '');
         };
-        ref.here.style.display = 'none';
+        ref.here.style.display = 'none'; ref.back.style.display = 'none';
         if (!settings.spotifyClient) return showMsg('Set up Spotify in this widget’s settings (press E, then its gear).');
         if (connected && opt(ref.it, 'here', false) && spot.sdkErr === 'reconnect') return showMsg('Reconnect Spotify once so glance can play music itself.', 'Reconnect', spConnect);
         if (!connected) return showMsg(spot.err || 'Connect your Spotify account to see and control what’s playing.', 'Connect Spotify', spConnect);
@@ -4102,6 +4118,8 @@ const TYPES = {
         if (vOk && document.activeElement !== ref.vol) ref.vol.value = dv.volume_percent;
         setText(ref.dev, opt(ref.it, 'device', true) && dv.name ? dv.name : '');
         ref.here.style.display = spot.sdkDev && dv.id !== spot.sdkDev ? '' : 'none';
+        ref.back.style.display = spot.sdkDev && dv.id === spot.sdkDev ? '' : 'none';
+        if (spot.sdkDev && dv.id === spot.sdkDev && spot.lastDevName) ref.back.title = 'Move the music back to ' + spot.lastDevName;
         const prog = opt(ref.it, 'progress', true);
         ref.seek.style.display = ref.tm.style.display = prog ? '' : 'none';
         ref.tickBar();
