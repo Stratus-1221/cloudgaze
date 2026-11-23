@@ -2075,7 +2075,7 @@ function polyPaint() { for (const r of refs) if (r.it.type === 'poly' && r.redra
 // Spotify: controls whatever is playing on your Spotify account (any device), using Spotify's Web API.
 // Sign-in uses PKCE, so no server or secret is needed. Tokens stay on this device; only the Client ID syncs.
 var spot = { tok: null, st: null, at: 0, timer: null, busy: false, err: '', wait: 0 };
-const SP_SCOPES = 'user-read-playback-state user-modify-playback-state user-read-currently-playing';
+const SP_SCOPES = 'user-read-playback-state user-modify-playback-state user-read-currently-playing streaming user-read-email user-read-private';
 const spRedirect = () => location.origin + location.pathname;
 const spLoad = () => { try { return JSON.parse(localStorage.getItem('clockSpotify')) || null; } catch (e) { return null; } };
 const spSave = t => { spot.tok = t; try { t ? localStorage.setItem('clockSpotify', JSON.stringify(t)) : localStorage.removeItem('clockSpotify'); } catch (e) {} };
@@ -2106,7 +2106,7 @@ async function spFinishLogin() {
   if (!pk || pk.state !== q.get('state')) return;
   try {
     const j = await spToken({ grant_type: 'authorization_code', code: q.get('code'), redirect_uri: spRedirect(), client_id: settings.spotifyClient, code_verifier: pk.verifier });
-    spSave({ access: j.access_token, refresh: j.refresh_token, exp: Date.now() + (j.expires_in - 60) * 1000 });
+    spSave({ access: j.access_token, refresh: j.refresh_token, exp: Date.now() + (j.expires_in - 60) * 1000, scope: j.scope || '' });
     toast('Spotify connected', 2);
     spot.err = ''; spPoll();
   } catch (e) { spot.err = 'Couldn’t connect to Spotify. Check the Client ID and redirect URI.'; spPaint(); }
@@ -2117,18 +2117,20 @@ async function spAccess() {
   if (Date.now() < t.exp) return t.access;
   try {
     const j = await spToken({ grant_type: 'refresh_token', refresh_token: t.refresh, client_id: settings.spotifyClient });
-    spSave({ access: j.access_token, refresh: j.refresh_token || t.refresh, exp: Date.now() + (j.expires_in - 60) * 1000 });
+    spSave({ access: j.access_token, refresh: j.refresh_token || t.refresh, exp: Date.now() + (j.expires_in - 60) * 1000, scope: j.scope || t.scope || '' });
     return spot.tok.access;
   } catch (e) {
     if (e.code === 'invalid_grant' || e.code === 'invalid_client') { spSave(null); spot.err = 'Spotify signed you out. Connect again.'; }
     return null;
   }
 }
-async function spApi(method, path, retry = true) {
+async function spApi(method, path, retry = true, body) {
   const tok = await spAccess();
   if (!tok) return { status: 0 };
-  const r = await fetch('https://api.spotify.com/v1' + path, { method, headers: { Authorization: 'Bearer ' + tok } });
-  if (r.status === 401 && retry) { if (spot.tok) spot.tok.exp = 0; return spApi(method, path, false); }
+  const headers = { Authorization: 'Bearer ' + tok };
+  if (body) headers['Content-Type'] = 'application/json';
+  const r = await fetch('https://api.spotify.com/v1' + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 401 && retry) { if (spot.tok) spot.tok.exp = 0; return spApi(method, path, false, body); }
   if (r.status === 429) spot.wait = Date.now() + 1000 * Number(r.headers.get('Retry-After') || 10);
   let j = null;
   if (r.status !== 204) j = await r.json().catch(() => null);
@@ -2137,25 +2139,88 @@ async function spApi(method, path, retry = true) {
 const spOn = () => refs.some(r => r.it.type === 'spotify');
 async function spPoll() {
   clearTimeout(spot.timer);
+  if (spWantHere()) spStartPlayer(); else if (spot.player) spStopPlayer();
   if (!spOn() || !(spot.tok || spLoad())) { spPaint(); return; }
   if (document.hidden || Date.now() < spot.wait) { spot.timer = setTimeout(spPoll, 5000); return; }
   try {
     const { status, j } = await spApi('GET', '/me/player?additional_types=episode');
-    if (status === 200 && j) { spot.st = j; spot.at = Date.now(); spot.err = ''; }
+    if (status === 200 && j) { spot.st = j; spot.at = Date.now(); spot.err = ''; if (j.device && j.device.id) { spot.lastDev = j.device.id; try { localStorage.setItem('clockSpotifyDev', j.device.id); } catch (e) {} } }
     else if (status === 204) { spot.st = null; spot.err = ''; }
     else if (status === 403) spot.err = 'Spotify says this account can’t be used here. The app may need you added as a user.';
   } catch (e) { spot.err = 'Can’t reach Spotify right now'; }
   spPaint();
   spot.timer = setTimeout(spPoll, spot.st && spot.st.is_playing ? 4000 : 10000);
 }
+// pick the device to wake: glance's own player, then the last one you used, then any
+async function spWakeDevice() {
+  if (spot.sdkDev) return spot.sdkDev;
+  const { status, j } = await spApi('GET', '/me/player/devices');
+  const list = status === 200 && j && j.devices || [];
+  const last = spot.lastDev || lsGet('clockSpotifyDev');
+  const d = list.find(x => x.id === last) || list.find(x => /computer|chromebook/i.test(x.type + ' ' + x.name)) || list[0];
+  return d ? d.id : null;
+}
 async function spCmd(method, path, optimistic) {
   if (optimistic && spot.st) { optimistic(spot.st); spot.at = Date.now(); spPaint(); }
+  spActivate();
   try {
-    const { status } = await spApi(method, path);
-    if (status === 404) toast('Open Spotify on a device and start a song first', 2.5);
-    else if (status === 403) toast('Spotify only allows this with Premium', 2.5);
-  } catch (e) { toast('Can’t reach Spotify right now', 2); }
+    let { status } = await spApi(method, path);
+    if (status === 404) {
+      // no device is awake: move playback to one, then try again
+      const id = await spWakeDevice();
+      if (id) {
+        const t = await spApi('PUT', '/me/player', true, { device_ids: [id], play: !/pause/.test(path) });
+        if (t.status === 204 || t.status === 202 || t.status === 200) {
+          if (!/\/(play|pause)$/.test(path.split('?')[0])) { await new Promise(r => setTimeout(r, 700)); status = (await spApi(method, path)).status; }
+          else status = 204;
+        }
+      }
+      if (status === 404) toast(spot.sdkDev ? 'Spotify didn\u2019t respond. Try again in a second' : 'Open Spotify on a device, or turn on \u201cPlay music in glance\u201d', 3);
+    }
+    if (status === 403) toast('Spotify only allows this with Premium', 2.5);
+  } catch (e) { toast('Can\u2019t reach Spotify right now', 2); }
   clearTimeout(spot.timer); spot.timer = setTimeout(spPoll, 600);
+}
+// glance as a Spotify player (Web Playback SDK)
+const spWantHere = () => refs.some(r => r.it.type === 'spotify' && opt(r.it, 'here', false));
+const spHasStreaming = () => { const t = spot.tok || spLoad(); return !!(t && / ?streaming/.test(t.scope || '')); };
+function spActivate() { try { spot.player && spot.player.activateElement && spot.player.activateElement(); } catch (e) {} }
+function spStartPlayer() {
+  if (spot.player || spot.sdkLoading || !spWantHere() || !(spot.tok || spLoad()) || location.protocol === 'file:') return;
+  if (!spHasStreaming()) { spot.sdkErr = 'reconnect'; spPaint(); return; }
+  spot.sdkLoading = true; spot.sdkErr = '';
+  const make = () => {
+    const pl = new Spotify.Player({ name: 'glance', volume: 0.7, getOAuthToken: cb => { spAccess().then(t => t && cb(t)); } });
+    spot.player = pl;
+    const fail = msg => { spot.sdkErr = msg; spot.sdkDev = null; spPaint(); };
+    pl.addListener('ready', ({ device_id }) => { spot.sdkDev = device_id; spot.sdkErr = ''; clearTimeout(spot.sdkTimer); spPaint(); toast('glance is ready as a Spotify player', 2); });
+    pl.addListener('not_ready', () => { spot.sdkDev = null; spPaint(); });
+    pl.addListener('initialization_error', () => fail('This browser can\u2019t play Spotify inside a page.'));
+    pl.addListener('authentication_error', () => fail('reconnect'));
+    pl.addListener('account_error', () => fail('Spotify says playing inside glance needs Premium.'));
+    pl.addListener('autoplay_failed', () => toast('Click the Spotify widget once to allow sound', 3));
+    pl.addListener('player_state_changed', () => { clearTimeout(spot.timer); spot.timer = setTimeout(spPoll, 300); });
+    spot.sdkTimer = setTimeout(() => { if (!spot.sdkDev) fail('Spotify didn\u2019t let glance become a player. Spotify may not allow this for new personal apps. The other controls still work.'); }, 20000);
+    pl.connect();
+  };
+  if (window.Spotify && Spotify.Player) return make();
+  window.onSpotifyWebPlaybackSDKReady = make;
+  const sc = document.createElement('script');
+  sc.src = 'https://sdk.scdn.co/spotify-player.js';
+  sc.onerror = () => { spot.sdkLoading = false; spot.sdkErr = 'Couldn\u2019t load Spotify\u2019s player. Your school may block it.'; spPaint(); };
+  document.head.append(sc);
+}
+function spStopPlayer() {
+  clearTimeout(spot.sdkTimer);
+  if (spot.player) { try { spot.player.disconnect(); } catch (e) {} }
+  spot.player = null; spot.sdkDev = null; spot.sdkLoading = false; spot.sdkErr = '';
+}
+async function spPlayHere() {
+  if (!spot.sdkDev) return;
+  spActivate();
+  const r = await spApi('PUT', '/me/player', true, { device_ids: [spot.sdkDev], play: true });
+  if (r.status === 404) await spApi('PUT', '/me/player/play?device_id=' + spot.sdkDev);
+  clearTimeout(spot.timer); spot.timer = setTimeout(spPoll, 800);
 }
 function spPaint() { for (const r of refs) if (r.it.type === 'spotify' && r.paint) r.paint(); }
 const spTime = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
@@ -3898,8 +3963,15 @@ const TYPES = {
     build(ref) {
       const head = mk('div', 'ct');
       head.append(mk('span', null, 'Spotify'));
+      const hr = mk('span'); hr.style.display = 'flex'; hr.style.gap = '0.8em'; hr.style.alignItems = 'center'; hr.style.minWidth = '0';
       ref.dev = mk('span', 'spdev');
-      head.append(ref.dev);
+      ref.here = mk('button', 'mini', 'Play here');
+      ref.here.title = 'Move the music to glance';
+      ref.here.onclick = e => { e.stopPropagation(); spPlayHere(); };
+      ref.here.addEventListener('pointerdown', e => e.stopPropagation());
+      hr.append(ref.dev, ref.here);
+      head.append(hr);
+      ref.inner.addEventListener('click', spActivate);
       ref.box = mk('div', 'sp');
       ref.art = mk('img'); ref.art.alt = ''; ref.art.hidden = true;
       ref.art.onerror = () => { ref.art.hidden = true; };
@@ -3944,10 +4016,16 @@ const TYPES = {
           if (btnText) { const b = mk('button', 'btn', btnText); b.onclick = e => { stop(e); fn(); }; b.addEventListener('pointerdown', stop); ref.msg.append(b); }
           setText(ref.dev, '');
         };
+        ref.here.style.display = 'none';
         if (!settings.spotifyClient) return showMsg('Set up Spotify in this widget’s settings (press E, then its gear).');
+        if (connected && opt(ref.it, 'here', false) && spot.sdkErr === 'reconnect') return showMsg('Reconnect Spotify once so glance can play music itself.', 'Reconnect', spConnect);
         if (!connected) return showMsg(spot.err || 'Connect your Spotify account to see and control what’s playing.', 'Connect Spotify', spConnect);
         if (spot.err && !st) return showMsg(spot.err, 'Try again', spPoll);
-        if (!it) return showMsg('Nothing playing. Start a song in Spotify on any device.');
+        if (!it) {
+          if (spot.sdkDev) return showMsg('Nothing playing.', 'Play in glance', spPlayHere);
+          if (opt(ref.it, 'here', false) && spot.sdkErr) return showMsg(spot.sdkErr);
+          return showMsg('Nothing playing right now.', 'Resume', () => spCmd('PUT', '/me/player/play'));
+        }
         ref.msg.style.display = 'none'; ref.box.style.display = '';
         setText(ref.t, it.name);
         setText(ref.a, it.artists ? it.artists.map(x => x.name).join(', ') : (it.show ? it.show.name : ''));
@@ -3962,6 +4040,7 @@ const TYPES = {
         ref.vol.style.display = vOk ? '' : 'none';
         if (vOk && document.activeElement !== ref.vol) ref.vol.value = dv.volume_percent;
         setText(ref.dev, opt(ref.it, 'device', true) && dv.name ? dv.name : '');
+        ref.here.style.display = spot.sdkDev && dv.id !== spot.sdkDev ? '' : 'none';
         const prog = opt(ref.it, 'progress', true);
         ref.bar.style.display = ref.tm.style.display = prog ? '' : 'none';
         ref.tickBar();
@@ -5071,6 +5150,8 @@ function widgetOptions(it) {
       rows.push(
         optNode('Client ID', idIn), help,
         optBtn('Account', connected ? 'Disconnect' : 'Connect', () => { if (connected) { spSave(null); spot.st = null; afterOptChange(); spPaint(); } else spConnect(); }),
+        optSeg('Play music in glance (beta)', ONOFF, O('here', false), v => { setOpt(it, 'here', v); if (!v) spStopPlayer(); setTimeout(spPoll, 50); }),
+        mk('div', 'sub', 'glance becomes its own Spotify speaker, so you don\u2019t need the Spotify app open. It plays sound from this tab. Spotify may not allow it for new personal apps; if so, everything else still works.'),
         optSeg('Cover art', ONOFF, O('art', true), S('art')),
         optSeg('Progress bar', ONOFF, O('progress', true), S('progress')),
         optSeg('Volume slider', ONOFF, O('volume', true), S('volume')),
