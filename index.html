@@ -220,6 +220,17 @@
   .hw .go { color: #444; text-decoration: none; visibility: hidden; flex: none; }
   .hw:hover .go { visibility: visible; }
   .hw .go:hover { color: #ccc; }
+  .hw .due:empty::before { content: '+ date'; visibility: hidden; color: #555; }
+  .hw:hover .due:empty::before { visibility: visible; }
+  .hwedit { display: flex; flex-wrap: wrap; gap: 0.35em; padding: 0.25em 0; }
+  .hwedit input, .hwedit select { background: #0d0d0d; border: 1px solid #2a2a2a; border-radius: 5px; color: #ddd; font: inherit; padding: 0.15em 0.4em; color-scheme: dark; min-width: 0; outline: none; }
+  .hwedit input:focus, .hwedit select:focus { border-color: #555; }
+  .hwedit .t { flex: 1 1 100%; }
+  .hwedit .r { display: flex; flex-wrap: wrap; gap: 0.35em; flex: 1 1 100%; align-items: center; }
+  .hwedit .r input[type=date] { flex: 1 1 8em; }
+  .hwedit .r input[type=time] { flex: 1 1 6em; }
+  .hwedit .r select { flex: 1 1 100%; }
+  .hwedit .mini { margin-left: auto; }
   .hwform { display: none; flex-direction: column; gap: 0.35em; border-top: 1px solid #161616; padding-top: 0.5em; margin-top: 0.4em; flex: none; }
   .hwform.show { display: flex; }
   .hwform .r { display: flex; gap: 0.4em; }
@@ -2790,6 +2801,7 @@ const TYPES = {
       const hideDone = opt(ref.it, 'hideDone', false), showCls = opt(ref.it, 'cls', true), daysAhead = Number(opt(ref.it, 'ahead', 0));
       const k = now.getHours() + ':' + now.getMinutes() + ':' + schedVer + hideDone + showCls + daysAhead;
       if (ref.k === k) return;
+      if (ref.list.querySelector('.hwedit') && ref.list.contains(document.activeElement)) return; // don't redraw while editing
       ref.k = k;
       // drop finished work a week after it was due
       const before = d.list.length;
@@ -2810,12 +2822,50 @@ const TYPES = {
         if (showCls && a.cls) tx.append(mk('span', 'cl', a.cls));
         let timer = null;
         tx.onclick = () => { clearTimeout(timer); timer = setTimeout(toggle, 230); };
-        tx.ondblclick = () => {
-          clearTimeout(timer);
-          const v = prompt('Edit assignment', a.t);
-          if (v != null) { if (v.trim()) a.t = v.trim(); save(); ref.redraw(); }
-        };
         const due = mk('span', 'due');
+        // double-click to edit the name, class and due date in place
+        const edit = focusDue => {
+          clearTimeout(timer);
+          const box = mk('div', 'hwedit');
+          const t = mk('input', 't'); t.value = a.t; t.placeholder = 'Assignment';
+          const cls = mk('select');
+          const none = mk('option', null, 'No class'); none.value = ''; cls.append(none);
+          [...new Set([...allClasses(), a.cls].filter(Boolean))].forEach(c => { const o = mk('option', null, c); o.value = c; cls.append(o); });
+          cls.value = a.cls || '';
+          const date = mk('input'); date.type = 'date'; date.value = a.due ? a.due.slice(0, 10) : '';
+          const time = mk('input'); time.type = 'time'; time.value = a.due && a.due.length > 10 ? a.due.slice(11, 16) : '';
+          const ok = mk('button', 'mini', 'Save');
+          const r2 = mk('div', 'r'); r2.append(cls, date, time, ok);
+          box.append(t, r2);
+          row.replaceWith(box);
+          let done = false;
+          const finish = keep => {
+            if (done) return; done = true;
+            if (keep) {
+              if (t.value.trim()) a.t = t.value.trim();
+              a.cls = cls.value;
+              a.due = date.value ? date.value + (time.value ? 'T' + time.value : '') : '';
+              save();
+            }
+            box.remove();
+            ref.redraw();
+          };
+          ok.onclick = e => { e.stopPropagation(); finish(true); };
+          box.addEventListener('keydown', e => {
+            e.stopPropagation();
+            if (e.key === 'Enter') finish(true);
+            if (e.key === 'Escape') finish(false);
+          });
+          // save when focus leaves the whole editor
+          box.addEventListener('focusout', () => setTimeout(() => { if (!box.contains(document.activeElement)) finish(true); }, 0));
+          const f = focusDue ? date : t;
+          f.focus();
+          if (f === t) t.select();
+        };
+        tx.ondblclick = e => { e.stopPropagation(); edit(false); };
+        due.ondblclick = e => { e.stopPropagation(); edit(true); };
+        due.onclick = e => { if (!a.due) { e.stopPropagation(); edit(true); } };
+        due.title = 'Double-click to change the due date';
         if (a.due) {
           const [label, cls] = hwDueLabel(a.due, now);
           due.textContent = label;
