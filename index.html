@@ -606,6 +606,7 @@
   .bigcode { font: 300 34px ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.25em; color: #fff; text-align: center; padding: 8px 0; user-select: all; }
   .wn h4 { margin: 10px 0 4px; color: #ccc; font-weight: 400; font-size: 13px; }
   .wn ul { margin: 0; padding-left: 18px; line-height: 1.7; color: #aaa; }
+  .wnall { max-height: 60vh; overflow-y: auto; padding-right: 6px; scrollbar-width: thin; }
   .linkbox { word-break: break-all; font-size: 11px; color: #777; max-height: 60px; overflow: auto; background: #0e0e0e; border: 1px solid #1c1c1c; border-radius: 6px; padding: 6px 8px; user-select: all; }
 
   /* command search */
@@ -6339,11 +6340,12 @@ $('fbBtn').onclick = e => { e.stopPropagation(); openFeedback(); };
 // what's new
 const VERSION = '1.10';
 const CHANGELOG = [
-  { v: '1.10', items: ['A/B day widget', 'Spotify widget: what\u2019s playing, play/pause, skip and volume on any of your devices', 'Double-click homework to change its name, class or due date', 'Clear done button for homework', 'Signing in lets you pick this computer\u2019s clock, your account\u2019s, or both'] },
+  { v: '1.10', items: ['A/B day widget', 'Spotify: drag the dot on the progress bar to skip around, Resume button, and it wakes a sleeping Spotify by itself', 'Spotify: play music in glance itself (beta)', 'Spotify widget: what\u2019s playing, play/pause, skip and volume on any of your devices', 'Double-click homework to change its name, class or due date', 'Clear done button for homework', 'Signing in lets you pick this computer\u2019s clock, your account\u2019s, or both'] },
   { v: '1.9', items: ['Metronome with tap tempo', 'Tuner for viola, violin, cello, bass and guitar', 'Quick links', 'Flashcards', 'Weather alert banner for warnings near you', 'Polyrhythm trainer', 'New setup with presets and sign-in, plus a guided tour (Settings → Help → Tour)', 'Metronome and polyrhythm vibrate on phones', 'Music preset', 'Sync button, and sync merges changes from all your computers', 'Version number at the bottom of Settings'] },
   { v: '1.8', items: ['Share a link to your layout, or a code for your bell schedule', 'Send feedback from Settings', 'Phone layout: widgets stack in one column', 'Ctrl+K searches every widget and setting', 'Fine grid for exact placement', 'A dozen fonts', 'Your own photo as the background', 'Seasonal effects: leaves, snow, petals, fireflies', 'Each layout can have its own background', 'Ring look for the class countdown', 'Alarm sounds you can pick'] },
   { v: '1.7', items: ['Bright text mode', 'On this day skips grim events and can show birthdays', 'Today’s schedule, day timeline, today agenda, search box, daily checklist, message board, On this day widgets'] },
   { v: '1.6', items: ['Keep me signed in', 'Background button', 'More presets'] },
+  { v: 'Before 1.6', items: ['The first glance: a big clock, weather and date on a black screen', 'Bell schedule with A/B days, the class countdown, progress bar and up next', 'Widgets you can turn on, move, resize and set up one by one', 'Layouts, backgrounds, presets, alarms, timers, homework and more', 'Accounts that sync your clock between computers'] },
 ];
 function verCmp(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
@@ -6354,7 +6356,7 @@ setText($('verLine'), `glance ${VERSION}`);
 $('verLine').onclick = e => { e.stopPropagation(); showWhatsNew(true); };
 function showWhatsNew(force) {
   const seen = settings.seenVersion;
-  const list = force ? CHANGELOG : CHANGELOG.filter(c => !seen || verCmp(c.v, seen) > 0);
+  const list = (force ? CHANGELOG : CHANGELOG.filter(c => !seen || verCmp(c.v, seen) > 0)).filter(c => /^\d/.test(c.v));
   if (!list.length) return;
   const box = mk('div', 'wn');
   list.slice(0, 3).forEach(c => {
@@ -6364,7 +6366,18 @@ function showWhatsNew(force) {
     box.append(ul);
   });
   settings.seenVersion = VERSION; save();
-  showModal({ title: 'What’s new in glance', body: [box], actions: [{ label: 'Nice', primary: true }] });
+  showModal({ title: 'What’s new in glance', body: [box], actions: [{ label: 'Full changelog', fn: () => { showChangelog(); return false; } }, { label: 'Nice', primary: true }] });
+}
+function showChangelog() {
+  const box = mk('div', 'wn wnall');
+  CHANGELOG.forEach(c => {
+    box.append(mk('h4', null, /^\d/.test(c.v) ? `Version ${c.v}${c.v === VERSION ? '  (you have this)' : ''}` : c.v));
+    const ul = mk('ul');
+    c.items.forEach(t => ul.append(mk('li', null, t)));
+    box.append(ul);
+  });
+  showModal({ title: 'Full changelog', body: [box], actions: [{ label: 'Back', fn: () => { showWhatsNew(true); return false; } }, { label: 'Done', primary: true }] });
+  box.scrollTop = 0;
 }
 $('newsBtn').onclick = e => { e.stopPropagation(); showWhatsNew(true); };
 
@@ -6407,6 +6420,7 @@ function cmdCommands() {
   add('Keyboard shortcuts', 'Help', () => openHelp());
   add('Run setup', 'Help', () => openSetup());
   add('Take the tour', 'Help', () => startTour());
+  add('Full changelog', 'Help', () => showChangelog());
   if (cloud.ready) add(cloud.user ? 'Sign out' : 'Sign in', 'Account', () => cloud.user ? $('acctBtn').click() : openAcct());
   if (cloud.ready && cloud.user) add('Sync now', 'Account', () => syncNow());
   return C;
