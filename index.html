@@ -6495,7 +6495,7 @@ function openFeedback() {
   const err = mk('div', 'su-text'); err.style.color = '#e07a6e';
   showModal({
     title: 'Send feedback',
-    body: ['Ideas, bugs, anything. It goes straight to the person who made glance.', kind, ta, who, err],
+    body: ['Ideas, bugs, anything. It goes straight to Stratus.', kind, ta, who, err],
     actions: [{ label: 'Cancel' }, { label: 'Send', primary: true, fn: btn => {
       const text = ta.value.trim();
       if (!text) { err.textContent = 'Write something first.'; return false; }
