@@ -716,7 +716,11 @@
   .spr { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.35em; }
   .spt { color: var(--c2); font-size: 1.15em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .spa { color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .spbar { height: 2px; background: var(--track, #222); border-radius: 1px; overflow: hidden; margin-top: 0.3em; }
+  .spseek { position: relative; padding: 0.45em 0; margin-top: 0.1em; cursor: pointer; touch-action: none; }
+  .spbar { height: 2px; background: var(--track, #222); border-radius: 1px; overflow: hidden; }
+  .spseek b { position: absolute; top: 50%; left: 0; width: 0.6em; height: 0.6em; margin: -0.3em 0 0 -0.3em; border-radius: 50%; background: #ddd; transition: transform 0.12s; }
+  .spseek:hover b, .spseek.drag b { transform: scale(1.35); }
+  .spseek:hover .spbar, .spseek.drag .spbar { height: 3px; }
   .spbar i { display: block; height: 100%; background: #bbb; width: 0; }
   .sptm { display: flex; justify-content: space-between; color: #555; font-size: 0.78em; font-variant-numeric: tabular-nums; }
   .spc { display: flex; align-items: center; gap: 1.1em; margin-top: 0.2em; }
@@ -3999,10 +4003,13 @@ const TYPES = {
       ref.inner.addEventListener('click', spActivate);
       ref.box = mk('div', 'sp');
       ref.art = mk('img'); ref.art.alt = ''; ref.art.hidden = true;
-      ref.art.onerror = () => { ref.art.hidden = true; };
+      ref.art.onerror = () => { ref.badArt = ref.art.getAttribute('src'); ref.art.hidden = true; };
       const right = mk('div', 'spr');
       ref.t = mk('div', 'spt'); ref.a = mk('div', 'spa');
+      ref.seek = mk('div', 'spseek'); ref.seek.title = 'Drag to skip around in the song';
       ref.bar = mk('div', 'spbar'); ref.fill = mk('i'); ref.bar.append(ref.fill);
+      ref.knob = mk('b');
+      ref.seek.append(ref.bar, ref.knob);
       ref.tm = mk('div', 'sptm'); ref.tm1 = mk('span'); ref.tm2 = mk('span'); ref.tm.append(ref.tm1, ref.tm2);
       const ctl = mk('div', 'spc');
       const prev = mk('button', 'mini'), next = mk('button', 'mini');
@@ -4011,7 +4018,7 @@ const TYPES = {
       prev.title = 'Previous'; next.title = 'Next';
       ref.vol = mk('input'); ref.vol.type = 'range'; ref.vol.min = 0; ref.vol.max = 100; ref.vol.title = 'Volume';
       ctl.append(prev, ref.pp, next, ref.vol);
-      right.append(ref.t, ref.a, ref.bar, ref.tm, ctl);
+      right.append(ref.t, ref.a, ref.seek, ref.tm, ctl);
       ref.box.append(ref.art, right);
       ref.msg = mk('div', 'spmsg');
       ref.inner.append(head, ref.box, ref.msg);
@@ -4026,13 +4033,41 @@ const TYPES = {
       };
       let vt = null;
       ref.vol.oninput = () => { clearTimeout(vt); vt = setTimeout(() => spCmd('PUT', '/me/player/volume?volume_percent=' + ref.vol.value, st => { if (st.device) st.device.volume_percent = Number(ref.vol.value); }), 250); };
+      const showPos = (pos, dur) => {
+        const pc = Math.max(0, Math.min(100, pos / dur * 100)) + '%';
+        ref.fill.style.width = pc; ref.knob.style.left = pc;
+        setText(ref.tm1, spTime(pos)); setText(ref.tm2, spTime(dur));
+      };
       ref.tickBar = () => {
         const st = spot.st, it = st && st.item;
-        if (!it) return;
-        const pos = Math.min(it.duration_ms, st.progress_ms + (st.is_playing ? Date.now() - spot.at : 0));
-        ref.fill.style.width = (pos / it.duration_ms * 100) + '%';
-        setText(ref.tm1, spTime(pos)); setText(ref.tm2, spTime(it.duration_ms));
+        if (!it || ref.dragging) return;
+        showPos(Math.min(it.duration_ms, st.progress_ms + (st.is_playing ? Date.now() - spot.at : 0)), it.duration_ms);
       };
+      // drag (or click) the dot to skip around in the song
+      const posAt = e => { const r = ref.bar.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); };
+      ref.seek.addEventListener('pointerdown', e => {
+        const it = spot.st && spot.st.item;
+        if (!it || e.button > 0) return;
+        e.stopPropagation(); e.preventDefault();
+        ref.dragging = true; ref.seek.classList.add('drag');
+        ref.seek.setPointerCapture(e.pointerId);
+        showPos(posAt(e) * it.duration_ms, it.duration_ms);
+      });
+      ref.seek.addEventListener('pointermove', e => {
+        const it = spot.st && spot.st.item;
+        if (ref.dragging && it) showPos(posAt(e) * it.duration_ms, it.duration_ms);
+      });
+      const endDrag = e => {
+        if (!ref.dragging) return;
+        ref.dragging = false; ref.seek.classList.remove('drag');
+        const it = spot.st && spot.st.item;
+        if (!it || e.type === 'pointercancel') return ref.tickBar();
+        const ms = Math.round(posAt(e) * it.duration_ms);
+        spCmd('PUT', '/me/player/seek?position_ms=' + ms, st => { st.progress_ms = ms; });
+      };
+      ref.seek.addEventListener('pointerup', endDrag);
+      ref.seek.addEventListener('pointercancel', endDrag);
+      ref.seek.addEventListener('click', e => e.stopPropagation());
       ref.paint = () => {
         const connected = !!(spot.tok || spLoad()), st = spot.st, it = st && st.item;
         const showMsg = (text, btnText, fn) => {
@@ -4056,7 +4091,7 @@ const TYPES = {
         setText(ref.a, it.artists ? it.artists.map(x => x.name).join(', ') : (it.show ? it.show.name : ''));
         const imgs = (it.album && it.album.images) || it.images || [];
         const src = imgs.length ? (imgs[1] || imgs[0]).url : '';
-        ref.art.hidden = !src || !opt(ref.it, 'art', true);
+        ref.art.hidden = !src || src === ref.badArt || !opt(ref.it, 'art', true);
         if (src && ref.art.getAttribute('src') !== src) ref.art.src = src;
         ref.pp.innerHTML = st.is_playing ? '<svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg>';
         ref.pp.title = st.is_playing ? 'Pause' : 'Play';
@@ -4067,7 +4102,7 @@ const TYPES = {
         setText(ref.dev, opt(ref.it, 'device', true) && dv.name ? dv.name : '');
         ref.here.style.display = spot.sdkDev && dv.id !== spot.sdkDev ? '' : 'none';
         const prog = opt(ref.it, 'progress', true);
-        ref.bar.style.display = ref.tm.style.display = prog ? '' : 'none';
+        ref.seek.style.display = ref.tm.style.display = prog ? '' : 'none';
         ref.tickBar();
       };
       ref.paint();
