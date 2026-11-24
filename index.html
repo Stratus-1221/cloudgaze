@@ -514,6 +514,12 @@
   body.sky-full .w:not(.card) .wi { text-shadow: 0 1px 3px rgba(0,0,0,0.45), 0 0 18px rgba(0,0,0,0.35); }
   #bgTab input[type=range] { accent-color: #777; width: 140px; }
   #bgTab .seg button { padding: 5px 9px; }
+  .fxlist { display: flex; flex-wrap: wrap; gap: 6px; margin: -2px 0 2px; }
+  .fxlist button { font: inherit; font-size: 0.92em; color: #666; background: none; border: 1px solid #222; border-radius: 6px; padding: 5px 10px 5px 8px; cursor: pointer; display: flex; align-items: center; gap: 7px; }
+  .fxlist button::before { content: ''; width: 11px; height: 11px; border: 1px solid #444; border-radius: 3px; box-sizing: border-box; flex: none; }
+  .fxlist button.on { background: #1a1a1a; color: #ddd; border-color: #333; }
+  .fxlist button.on::before { background: #bbb; border-color: #bbb; box-shadow: inset 0 0 0 2px #1a1a1a; }
+  .fxlist button:hover { color: #ccc; }
   .hint { color: #444; }
   .seg { display: flex; border: 1px solid #222; border-radius: 6px; overflow: hidden; }
   .seg button, .btn {
@@ -1479,7 +1485,7 @@ function moonPhase(d) {
 }
 
 // background
-const BG_DEFAULT = { effects: 'none', sky: 'black', sync: true, sunmoon: true, hills: false, anim: true, dim: 0 };
+const BG_DEFAULT = { effects: [], sky: 'black', sync: true, sunmoon: true, hills: false, anim: true, dim: 0 };
 const layBg = () => { const l = settings.layouts && settings.layouts.find(x => x.id === settings.activeLayout); return l && l.bgfx ? l : null; };
 const bgCfg = () => Object.assign({}, BG_DEFAULT, (layBg() || {}).bgfx || settings.bgfx || {});
 function setBgCfg(patch) {
@@ -1487,7 +1493,7 @@ function setBgCfg(patch) {
   if (l) l.bgfx = Object.assign(bgCfg(), patch);
   else settings.bgfx = Object.assign(bgCfg(), patch);
 }
-const fx = { kind: 'none', parts: [], raf: 0, last: 0, sky: null, skyKey: '', starVis: 1, on: false };
+const fx = { kinds: [], layers: {}, dense: false, cloudTone: null, raf: 0, last: 0, sky: null, skyKey: '', starVis: 1, on: false };
 const SKY = {
   tint: { night: ['#05070e', '#000000'], dawn: ['#0e0a14', '#1c0e09'], day: ['#081220', '#03070c'], dusk: ['#110917', '#1f0c08'] },
   dark: { night: ['#08102a', '#010208'], dawn: ['#1d1438', '#4d2617'], day: ['#103050', '#0a1c30'], dusk: ['#26113c', '#5a2410'] },
@@ -1551,40 +1557,135 @@ function seasonKind() {
   if (m >= 2 && m <= 4) return 'petals';
   return night ? 'fireflies' : 'motes';
 }
-function effectKind(cfg) {
-  if (cfg.effects === 'seasonal') return seasonKind();
-  if (cfg.effects !== 'weather') return cfg.effects || 'none';
-  if (!wx || !wx.current) return 'none';
+const FX_LIST = [['weather', 'Weather'], ['seasonal', 'Seasonal'], ['clouds', 'Clouds'], ['stars', 'Stars'], ['rain', 'Rain'], ['snow', 'Snow'], ['leaves', 'Leaves'], ['petals', 'Petals'], ['fireflies', 'Fireflies'], ['motes', 'Summer light']];
+const FX_ORDER = ['stars', 'motes', 'clouds', 'fireflies', 'rain', 'snow', 'petals', 'leaves'];
+const fxList = cfg => { const e = cfg.effects; return Array.isArray(e) ? e.filter(Boolean) : (!e || e === 'none') ? [] : [e]; };
+function weatherKinds() {
+  if (!wx || !wx.current) return [];
   const c = wx.current.weather_code, day = wx.current.is_day !== 0;
-  if ((c >= 71 && c <= 77) || c === 85 || c === 86) return 'snow';
-  if (c >= 51) return 'rain';
-  if (c <= 1) return day ? 'motes' : 'stars';
-  if (c === 2) return day ? 'clouds' : 'stars';
-  return 'clouds';
+  if ((c >= 71 && c <= 77) || c === 85 || c === 86) return ['clouds', 'snow'];
+  if (c >= 51) return ['clouds', 'rain'];
+  if (c <= 1) return [day ? 'motes' : 'stars'];
+  if (c === 2) return day ? ['clouds'] : ['stars', 'clouds'];
+  return ['clouds'];
 }
-function makeParts() {
+function effectKinds(cfg) {
+  const on = new Set();
+  for (const e of fxList(cfg)) {
+    if (e === 'seasonal') on.add(seasonKind());
+    else if (e === 'weather') weatherKinds().forEach(k => on.add(k));
+    else on.add(e);
+  }
+  return FX_ORDER.filter(k => on.has(k));
+}
+const isOvercast = () => !!(wx && wx.current && wx.current.weather_code >= 3);
+function makeParts(kind) {
   const W = innerWidth, H = innerHeight, R = Math.random;
-  const n = { stars: 170, rain: 90, snow: 80, clouds: 7, motes: 45, leaves: 26, petals: 34, fireflies: 32 }[fx.kind] || 0;
-  fx.parts = Array.from({ length: n }, () => ({ x: R() * W, y: R() * H, s: R(), p: R() * 6.28 }));
-  if (fx.kind === 'clouds') fx.parts.forEach(p => { p.r = (0.15 + p.s * 0.2) * Math.max(W, H); p.y = R() * H * 0.8; });
-  if (fx.kind === 'stars') fx.parts.forEach(p => { p.y = R() * H * 0.85; });
-  if (fx.kind === 'leaves' || fx.kind === 'petals') fx.parts.forEach(p => { p.rot = R() * 6.28; p.spin = (R() - 0.5) * 2; p.c = Math.floor(R() * 4); });
+  if (kind === 'clouds') return makeClouds(W, H);
+  const n = { stars: 170, rain: 90, snow: 80, motes: 45, leaves: 26, petals: 34, fireflies: 32 }[kind] || 0;
+  const parts = Array.from({ length: n }, () => ({ x: R() * W, y: R() * H, s: R(), p: R() * 6.28 }));
+  if (kind === 'stars') parts.forEach(p => { p.y = R() * H * 0.85; });
+  if (kind === 'leaves' || kind === 'petals') parts.forEach(p => { p.rot = R() * 6.28; p.spin = (R() - 0.5) * 2; p.c = Math.floor(R() * 4); });
+  return parts;
+}
+// clouds: each one is a cluster of puffs drawn once into its own little picture, then slid across the sky
+function cloudShape() {
+  const R = Math.random, n = 6 + Math.floor(R() * 5), puffs = [];
+  for (let i = 0; i < n; i++) {
+    const u = i / (n - 1), bell = Math.sin(Math.PI * (0.1 + u * 0.8));
+    const r = 0.06 + 0.09 * bell * (0.75 + R() * 0.5);
+    puffs.push({ x: 0.13 + u * 0.74 + (R() - 0.5) * 0.05, y: r * 0.5 + bell * 0.04 * R(), r });
+  }
+  for (let i = 0; i < 2 + Math.floor(R() * 2); i++) {
+    const r = 0.07 + R() * 0.05;
+    puffs.push({ x: 0.35 + R() * 0.3, y: 0.1 + R() * 0.05, r });
+  }
+  return puffs;
+}
+function cloudPlace(p, W, H, first) {
+  p.y = H * (0.02 + (1 - p.s) * 0.16 + Math.random() * 0.3);
+  p.x = first ? Math.random() * (W + p.w) - p.w : -p.w - Math.random() * W * 0.3;
+}
+function makeClouds(W, H) {
+  const dense = isOvercast(), big = Math.max(W, H * 1.3, 700);
+  const n = dense ? 13 : Math.max(5, Math.min(9, Math.round(W / 240)));
+  const parts = Array.from({ length: n }, () => {
+    const s = Math.random();
+    const p = { s, w: big * (0.13 + s * 0.2) * (dense ? 1.25 : 1), puffs: cloudShape(), spr: null, sprKey: '' };
+    cloudPlace(p, W, H, true);
+    return p;
+  });
+  return parts.sort((a, b) => a.s - b.s);
+}
+function cloudSprite(p, tone) {
+  const w = Math.ceil(p.w), h = Math.ceil(p.w * 0.5), base = h * 0.78;
+  const c = p.spr || document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, w, h);
+  // 1. the shape, soft at the edges
+  g.filter = `blur(${Math.max(1.2, w * 0.0055).toFixed(1)}px)`;
+  for (const q of p.puffs) {
+    const x = q.x * w, y = base - q.y * w, r = q.r * w;
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.62, 'rgba(255,255,255,0.95)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 6.29); g.fill();
+  }
+  g.filter = 'none';
+  // flatten the bottom a little
+  g.globalCompositeOperation = 'destination-out';
+  const cut = g.createLinearGradient(0, base - h * 0.05, 0, h);
+  cut.addColorStop(0, 'rgba(0,0,0,0)'); cut.addColorStop(1, 'rgba(0,0,0,1)');
+  g.fillStyle = cut; g.fillRect(0, 0, w, h);
+  // 2. color it: lit on top, shaded underneath
+  g.globalCompositeOperation = 'source-in';
+  const sh = g.createLinearGradient(0, h * 0.1, 0, base);
+  sh.addColorStop(0, rgbStr(tone.lit)); sh.addColorStop(1, rgbStr(tone.shade));
+  g.fillStyle = sh; g.fillRect(0, 0, w, h);
+  // 3. a highlight on the top of each puff so they read as separate billows
+  g.globalCompositeOperation = 'source-atop';
+  for (const q of p.puffs) {
+    const x = q.x * w, y = base - q.y * w - q.r * w * 0.35, r = q.r * w * 0.85;
+    const hl = g.createRadialGradient(x, y, 0, x, y, r);
+    hl.addColorStop(0, rgbStr(tone.lit, 0.55)); hl.addColorStop(1, rgbStr(tone.lit, 0));
+    g.fillStyle = hl; g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  g.globalCompositeOperation = 'source-over';
+  p.spr = c;
+}
+function cloudTone(cfg, st) {
+  const T = {
+    day: [[255, 255, 255], [192, 202, 218]], dawn: [[255, 218, 196], [128, 116, 142]], dusk: [[255, 205, 180], [112, 98, 128]],
+    night: [[128, 140, 166], [44, 50, 68]], grey: [[226, 229, 235], [146, 152, 165]],
+  };
+  let pal = cfg.sky === 'black' || cfg.sky === 'photo' ? 'night' : st.pal, mix = cfg.sky === 'black' || cfg.sky === 'photo' ? 'night' : (st.mix || st.pal);
+  let lit = mixRgb(T[pal][0], T[mix][0], st.t), shade = mixRgb(T[pal][1], T[mix][1], st.t);
+  if (isOvercast() && cfg.sky === 'full') { const k = 1 - st.star * 0.6; lit = mixRgb(lit, T.grey[0], 0.6 * k); shade = mixRgb(shade, T.grey[1], 0.6 * k); }
+  const q = c => c.map(v => Math.round(v / 6) * 6);
+  lit = q(lit); shade = q(shade);
+  const daylight = 1 - st.star;
+  const a = cfg.sky === 'full' ? 0.42 + 0.5 * daylight : { black: 0.13, tint: 0.17, dark: 0.26, photo: 0.3 }[cfg.sky] || 0.2;
+  return { lit, shade, a, key: lit.join() + shade.join() };
 }
 function setBg() {
   const cfg = bgCfg(), cv = $('bgfx');
-  const kind = effectKind(cfg);
-  const on = cfg.sky !== 'black' || kind !== 'none' || cfg.hills;
+  const kinds = effectKinds(cfg);
+  const on = cfg.sky !== 'black' || kinds.length > 0 || cfg.hills;
   if (cfg.sky === 'photo' && bgPhoto && !bgImg) { bgImg = new Image(); bgImg.onload = () => { fx.skyKey = ''; setBg(); }; bgImg.src = bgPhoto; }
   fx.on = on;
   cv.style.display = on ? 'block' : 'none';
   document.body.classList.toggle('sky-full', on && (cfg.sky === 'full' || (cfg.sky === 'photo' && !!bgPhoto)));
   if (typeof applyWidgetBg === 'function' && refs) applyWidgetBg();
   cancelAnimationFrame(fx.raf); fx.raf = 0;
-  if (!on) { fx.kind = 'none'; fx.parts = []; return; }
-  if (cv.width !== innerWidth || cv.height !== innerHeight) { cv.width = innerWidth; cv.height = innerHeight; fx.skyKey = ''; }
-  if (kind !== fx.kind || !fx.parts.length) { fx.kind = kind; makeParts(); }
+  if (!on) { fx.kinds = []; fx.layers = {}; return; }
+  if (cv.width !== innerWidth || cv.height !== innerHeight) { cv.width = innerWidth; cv.height = innerHeight; fx.skyKey = ''; fx.layers = {}; }
+  const dense = isOvercast();
+  if (dense !== fx.dense) { fx.dense = dense; delete fx.layers.clouds; }
+  const layers = {};
+  kinds.forEach(k => { layers[k] = fx.layers[k] || makeParts(k); });
+  fx.layers = layers; fx.kinds = kinds;
   fx.skyKey = '';
-  if (cfg.anim && kind !== 'none') fx.raf = requestAnimationFrame(drawBg);
+  if (cfg.anim && kinds.length) fx.raf = requestAnimationFrame(drawBg);
   else drawFrame(performance.now(), 0);
 }
 function bgTick() { if (fx.on && !fx.raf) drawFrame(performance.now(), 0); }
@@ -1596,6 +1697,7 @@ function renderSky(cfg, W, H) {
   fx.skyKey = key;
   const st = skyState(now, cfg);
   fx.starVis = st.star;
+  fx.cloudTone = cloudTone(cfg, st);
   const c = fx.sky || (fx.sky = document.createElement('canvas'));
   c.width = W; c.height = H;
   const g = c.getContext('2d');
@@ -1665,42 +1767,37 @@ function renderSky(cfg, W, H) {
 }
 function drawBg(t) {
   fx.raf = requestAnimationFrame(drawBg);
-  const fps = { stars: 8, clouds: 10, motes: 15, fireflies: 15, leaves: 20, petals: 20 }[fx.kind] || 24;
+  const FPS = { stars: 8, clouds: 20, motes: 15, fireflies: 15, leaves: 20, petals: 20, rain: 24, snow: 24 };
+  const fps = Math.max(8, ...fx.kinds.map(k => FPS[k] || 24));
   if (document.hidden || t - fx.last < 1000 / fps) return;
   const dt = Math.min(0.2, (t - fx.last) / 1000 || 0.04);
   fx.last = t;
   drawFrame(t, dt);
 }
-function drawFrame(t, dt) {
-  const cv = $('bgfx'), g = cv.getContext('2d'), W = cv.width, H = cv.height, cfg = bgCfg();
-  renderSky(cfg, W, H);
-  g.clearRect(0, 0, W, H);
-  if (fx.sky) g.drawImage(fx.sky, 0, 0);
-  const boost = { black: 1, tint: 1.2, dark: 1.6, full: 3 }[cfg.sky] || 1;
-  if (fx.kind === 'stars') {
+const FX_DRAW = {
+  stars(g, parts, t, dt, W, H, cfg) {
     const vis = cfg.sky === 'black' ? 1 : fx.starVis;
-    if (vis > 0.01) for (const p of fx.parts) {
+    if (vis > 0.01) for (const p of parts) {
       const tw = 0.55 + 0.45 * Math.sin(t / 1500 + p.p * 3);
       const a = (0.18 + 0.5 * p.s) * tw * vis;
       const r = p.s > 0.9 ? 1.6 : p.s > 0.6 ? 1.1 : 0.8;
       g.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
       g.beginPath(); g.arc(p.x, p.y, r, 0, 6.29); g.fill();
     }
-  } else if (fx.kind === 'clouds') {
-    const light = cfg.sky === 'full' && fx.starVis < 0.5;
-    for (const p of fx.parts) {
-      p.x += (6 + p.s * 8) * dt;
-      if (p.x - p.r > W) p.x = -p.r;
-      const grad = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
-      const a = Math.min(0.35, (0.025 + p.s * 0.025) * boost);
-      const col = light ? '235,240,248' : '170,180,195';
-      grad.addColorStop(0, `rgba(${col},${a.toFixed(3)})`);
-      grad.addColorStop(1, `rgba(${col},0)`);
-      g.fillStyle = grad;
-      g.beginPath(); g.ellipse(p.x, p.y, p.r, p.r * 0.45, 0, 0, 6.29); g.fill();
+  },
+  clouds(g, parts, t, dt, W, H, cfg) {
+    const tone = fx.cloudTone || cloudTone(cfg, skyState(new Date(), cfg));
+    for (const p of parts) {
+      p.x += (3 + p.s * 11) * dt;
+      if (p.x > W) cloudPlace(p, W, H, false);
+      if (p.sprKey !== tone.key) { cloudSprite(p, tone); p.sprKey = tone.key; }
+      g.globalAlpha = Math.min(1, tone.a * (0.55 + 0.45 * p.s));
+      g.drawImage(p.spr, p.x, p.y);
     }
-  } else if (fx.kind === 'motes') {
-    for (const p of fx.parts) {
+    g.globalAlpha = 1;
+  },
+  motes(g, parts, t, dt, W, H, cfg) {
+    for (const p of parts) {
       p.y -= (6 + p.s * 10) * dt;
       p.x += Math.sin(t / 3000 + p.p) * 6 * dt;
       if (p.y < -5) { p.y = H + 5; p.x = Math.random() * W; }
@@ -1708,36 +1805,23 @@ function drawFrame(t, dt) {
       g.fillStyle = `rgba(255,225,170,${a.toFixed(3)})`;
       g.beginPath(); g.arc(p.x, p.y, 0.8 + p.s * 1.2, 0, 6.29); g.fill();
     }
-  } else if (fx.kind === 'rain') {
+  },
+  rain(g, parts, t, dt, W, H, cfg, boost) {
     g.strokeStyle = `rgba(170,190,215,${Math.min(0.5, 0.2 * boost).toFixed(2)})`;
     g.lineWidth = 1;
     g.beginPath();
-    for (const p of fx.parts) {
+    for (const p of parts) {
       const v = 260 + p.s * 220;
       p.y += v * dt; p.x -= v * 0.12 * dt;
       if (p.y > H) { p.y = -20; p.x = Math.random() * (W + 100); }
       g.moveTo(p.x, p.y); g.lineTo(p.x + 2, p.y - 12 - p.s * 8);
     }
     g.stroke();
-  } else if (fx.kind === 'leaves' || fx.kind === 'petals') {
-    const leaf = fx.kind === 'leaves';
-    const cols = leaf ? ['181,86,43', '201,130,47', '141,59,31', '214,163,60'] : ['242,184,201', '247,206,218', '236,160,184', '252,226,233'];
-    for (const p of fx.parts) {
-      p.y += (leaf ? 22 + p.s * 26 : 14 + p.s * 18) * dt;
-      p.x += (Math.sin(t / 1800 + p.p) * (leaf ? 30 : 22) + (leaf ? 0 : 12)) * dt;
-      p.rot += p.spin * dt;
-      if (p.y > H + 10) { p.y = -10; p.x = Math.random() * W; }
-      if (p.x > W + 10) p.x = -10;
-      const a = Math.min(0.85, (leaf ? 0.35 : 0.3) + p.s * 0.3) * (cfg.sky === 'black' ? 0.8 : 1);
-      g.save();
-      g.translate(p.x, p.y); g.rotate(p.rot);
-      g.fillStyle = `rgba(${cols[p.c]},${a.toFixed(3)})`;
-      const sz = leaf ? 3 + p.s * 4 : 2 + p.s * 2.2;
-      g.beginPath(); g.ellipse(0, 0, sz * 1.6, sz * (Math.abs(Math.sin(t / 700 + p.p)) * 0.7 + 0.3), 0, 0, 6.29); g.fill();
-      g.restore();
-    }
-  } else if (fx.kind === 'fireflies') {
-    for (const p of fx.parts) {
+  },
+  leaves(g, parts, t, dt, W, H, cfg) { fallers(g, parts, t, dt, W, H, cfg, true); },
+  petals(g, parts, t, dt, W, H, cfg) { fallers(g, parts, t, dt, W, H, cfg, false); },
+  fireflies(g, parts, t, dt) {
+    for (const p of parts) {
       p.x += Math.sin(t / 2500 + p.p) * 10 * dt;
       p.y += Math.cos(t / 3100 + p.p * 2) * 8 * dt;
       const blink = Math.max(0, Math.sin(t / (900 + p.s * 900) + p.p * 5));
@@ -1749,21 +1833,52 @@ function drawFrame(t, dt) {
       g.fillStyle = grad;
       g.beginPath(); g.arc(p.x, p.y, r, 0, 6.29); g.fill();
     }
-  } else if (fx.kind === 'snow') {
-    for (const p of fx.parts) {
+  },
+  snow(g, parts, t, dt, W, H, cfg) {
+    for (const p of parts) {
       p.y += (18 + p.s * 30) * dt;
       p.x += Math.sin(t / 2000 + p.p) * 12 * dt;
       if (p.y > H) { p.y = -5; p.x = Math.random() * W; }
       g.fillStyle = `rgba(255,255,255,${Math.min(0.9, (0.2 + p.s * 0.3) * (cfg.sky === 'full' ? 1.5 : 1)).toFixed(3)})`;
       g.beginPath(); g.arc(p.x, p.y, 0.8 + p.s * 1.4, 0, 6.29); g.fill();
     }
+  },
+};
+function fallers(g, parts, t, dt, W, H, cfg, leaf) {
+  const cols = leaf ? ['181,86,43', '201,130,47', '141,59,31', '214,163,60'] : ['242,184,201', '247,206,218', '236,160,184', '252,226,233'];
+  for (const p of parts) {
+    p.y += (leaf ? 22 + p.s * 26 : 14 + p.s * 18) * dt;
+    p.x += (Math.sin(t / 1800 + p.p) * (leaf ? 30 : 22) + (leaf ? 0 : 12)) * dt;
+    p.rot += p.spin * dt;
+    if (p.y > H + 10) { p.y = -10; p.x = Math.random() * W; }
+    if (p.x > W + 10) p.x = -10;
+    const a = Math.min(0.85, (leaf ? 0.35 : 0.3) + p.s * 0.3) * (cfg.sky === 'black' ? 0.8 : 1);
+    g.save();
+    g.translate(p.x, p.y); g.rotate(p.rot);
+    g.fillStyle = `rgba(${cols[p.c]},${a.toFixed(3)})`;
+    const sz = leaf ? 3 + p.s * 4 : 2 + p.s * 2.2;
+    g.beginPath(); g.ellipse(0, 0, sz * 1.6, sz * (Math.abs(Math.sin(t / 700 + p.p)) * 0.7 + 0.3), 0, 0, 6.29); g.fill();
+    g.restore();
   }
+}
+function drawFrame(t, dt) {
+  const cv = $('bgfx'), g = cv.getContext('2d'), W = cv.width, H = cv.height, cfg = bgCfg();
+  renderSky(cfg, W, H);
+  g.clearRect(0, 0, W, H);
+  if (fx.sky) g.drawImage(fx.sky, 0, 0);
+  const boost = { black: 1, tint: 1.2, dark: 1.6, full: 3 }[cfg.sky] || 1;
+  for (const k of fx.kinds) if (fx.layers[k]) FX_DRAW[k](g, fx.layers[k], t, dt, W, H, cfg, boost);
   const dim = Number(cfg.dim || 0) / 100;
   if (dim > 0) { g.fillStyle = `rgba(0,0,0,${dim})`; g.fillRect(0, 0, W, H); }
 }
-window.addEventListener('resize', () => { if (fx.on) { fx.parts = []; setBg(); } });
+window.addEventListener('resize', () => { if (fx.on) { fx.layers = {}; setBg(); } });
 
 // background tab
+function toggleFx(v) {
+  const cur = fxList(bgCfg());
+  setBgCfg({ effects: cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v] });
+  save(); setBg();
+}
 function renderBgTab() {
   const box = $('bgTab');
   if (!box) return;
@@ -1805,8 +1920,17 @@ function renderBgTab() {
     box.append(row);
     if (!bgPhoto) box.append(mk('div', 'sub', 'Pick a picture from your computer. It\u2019s saved on this computer only, so it won\u2019t sync to your account.'));
   }
-  seg('Effects', 'effects', [['none', 'None'], ['weather', 'Weather'], ['seasonal', 'Seasonal'], ['stars', 'Stars'], ['clouds', 'Clouds'], ['rain', 'Rain'], ['snow', 'Snow']]);
-  if (cfg.effects === 'seasonal') box.append(mk('div', 'sub', `Right now: ${{ leaves: 'falling leaves', snow: 'snow', petals: 'spring petals', fireflies: 'fireflies', motes: 'summer light' }[seasonKind()]}. Leaves in fall, snow in winter, petals in spring, fireflies on summer nights.`));
+  const picked = fxList(cfg);
+  const fxl = mk('div', 'fxlist');
+  FX_LIST.forEach(([v, l]) => {
+    const b = mk('button', picked.includes(v) ? 'on' : '', l);
+    b.onclick = e => { e.stopPropagation(); toggleFx(v); renderBgTab(); };
+    fxl.append(b);
+  });
+  const fxRow = mk('div', 'row');
+  fxRow.append(mk('span', null, 'Effects'), mk('span', 'sub', picked.length ? `${picked.length} on` : 'Turn on any mix'));
+  box.append(fxRow, fxl);
+  if (picked.includes('seasonal')) box.append(mk('div', 'sub', `Right now: ${{ leaves: 'falling leaves', snow: 'snow', petals: 'spring petals', fireflies: 'fireflies', motes: 'summer light' }[seasonKind()]}. Leaves in fall, snow in winter, petals in spring, fireflies on summer nights.`));
   if (cfg.sky !== 'black' && cfg.sky !== 'photo') {
     seg('Follow time of day', 'sync', [[true, 'On'], [false, 'Off']]);
     seg('Sun and moon', 'sunmoon', [[true, 'On'], [false, 'Off']]);
@@ -1823,7 +1947,7 @@ function renderBgTab() {
   row.append(mk('span', null, 'Darken'), wrap);
   box.append(row);
   const note = cfg.sky === 'full' || cfg.sky === 'photo' ? 'Bright skies and photos put a shade behind widgets so text stays readable. ' : '';
-  box.append(mk('div', 'sub', note + 'Weather picks stars, clouds, rain or snow to match outside. Animation uses a little more battery; Still draws it once a minute.'));
+  box.append(mk('div', 'sub', note + 'Weather adds clouds, rain, snow or stars to match outside. Seasonal adds leaves, snow, petals or fireflies. Animation uses a little more battery; Still draws it once a minute.'));
 }
 
 // flip clock
@@ -6514,8 +6638,9 @@ function openFeedback() {
 $('fbBtn').onclick = e => { e.stopPropagation(); openFeedback(); };
 
 // what's new
-const VERSION = '1.10';
+const VERSION = '1.11';
 const CHANGELOG = [
+  { v: '1.11', items: ['New name: cloudgaze', 'Background effects are a checklist now, so you can mix clouds, leaves, snow and more', 'Puffier, softer clouds that light up at sunset and turn grey when it\u2019s overcast', 'New effects to pick by hand: leaves, petals, fireflies and summer light', 'Weather effects add clouds behind rain and snow'] },
   { v: '1.10', items: ['A/B day widget', 'Spotify: drag the dot on the progress bar to skip around, Resume button, and it wakes a sleeping Spotify by itself', 'Spotify: play music in cloudgaze itself (beta)', 'Spotify widget: what\u2019s playing, play/pause, skip and volume on any of your devices', 'Double-click homework to change its name, class or due date', 'Clear done button for homework', 'Signing in lets you pick this computer\u2019s clock, your account\u2019s, or both'] },
   { v: '1.9', items: ['Metronome with tap tempo', 'Tuner for viola, violin, cello, bass and guitar', 'Quick links', 'Flashcards', 'Weather alert banner for warnings near you', 'Polyrhythm trainer', 'New setup with presets and sign-in, plus a guided tour (Settings → Help → Tour)', 'Metronome and polyrhythm vibrate on phones', 'Music preset', 'Sync button, and sync merges changes from all your computers', 'Version number at the bottom of Settings'] },
   { v: '1.8', items: ['Share a link to your layout, or a code for your bell schedule', 'Send feedback from Settings', 'Phone layout: widgets stack in one column', 'Ctrl+K searches every widget and setting', 'Fine grid for exact placement', 'A dozen fonts', 'Your own photo as the background', 'Seasonal effects: leaves, snow, petals, fireflies', 'Each layout can have its own background', 'Ring look for the class countdown', 'Alarm sounds you can pick'] },
@@ -6587,7 +6712,8 @@ function cmdCommands() {
   add(`Text: ${settings.textMode === 'soft' ? 'Bright' : 'Soft'}`, 'Look', () => { settings.textMode = settings.textMode === 'soft' ? 'bright' : 'soft'; save(); applySettings(); });
   Object.entries(FONTS).forEach(([k, F]) => add(`Font: ${F.label}`, 'Look', () => { settings.font = k; save(); applySettings(); }));
   [['black', 'Black'], ['tint', 'Tint'], ['dark', 'Dark sky'], ['full', 'Full scene'], ['photo', 'Photo']].forEach(([v, l]) => add(`Sky: ${l}`, 'Background', () => { setBgCfg({ sky: v }); save(); setBg(); if (v === 'photo' && !bgPhoto) openPanel('bg'); }));
-  [['none', 'None'], ['weather', 'Weather'], ['seasonal', 'Seasonal'], ['stars', 'Stars'], ['clouds', 'Clouds'], ['rain', 'Rain'], ['snow', 'Snow']].forEach(([v, l]) => add(`Effects: ${l}`, 'Background', () => { setBgCfg({ effects: v }); save(); setBg(); }));
+  FX_LIST.forEach(([v, l]) => add(`Effects: ${l} ${fxList(bgCfg()).includes(v) ? 'off' : 'on'}`, 'Background', () => toggleFx(v)));
+  add('Effects: all off', 'Background', () => { setBgCfg({ effects: [] }); save(); setBg(); });
   add('Share this layout', 'Share', () => shareLayout());
   add('Share bell schedule', 'Share', () => shareSchedule());
   add('Use a schedule code', 'Share', () => importScheduleCode());
