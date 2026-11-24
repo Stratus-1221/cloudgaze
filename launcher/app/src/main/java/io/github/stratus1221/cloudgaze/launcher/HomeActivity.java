@@ -63,6 +63,7 @@ public class HomeActivity extends Activity {
     private GridAdapter cells;
     private boolean drawerOpen;
     private GestureDetector gestures;
+    private Controls controls;
     private LauncherApps.Callback appsChanged;
     private long lastWeather;
 
@@ -76,6 +77,8 @@ public class HomeActivity extends Activity {
         root.setBackgroundColor(0xFF000000);
         buildHome();
         buildDrawer();
+        controls = new Controls(this, () -> {});
+        root.addView(controls.view, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
         setContentView(root);
         renderHome();
         edgeToEdge();
@@ -86,6 +89,11 @@ public class HomeActivity extends Activity {
                 if (a == null || b == null) return false;
                 float dy = b.getY() - a.getY();
                 boolean vertical = Math.abs(vy) > Math.abs(vx) * 1.3f;
+                if (controls.isOpen()) {
+                    if (vertical && dy < -Ui.dp(HomeActivity.this, 40) && vy < -400) { controls.close(); return true; }
+                    return false;
+                }
+                if (!drawerOpen && vertical && dy > Ui.dp(HomeActivity.this, 50) && vy > 500) { controls.setH24(cfg.h24); controls.show(); return true; }
                 if (!drawerOpen && vertical && dy < -Ui.dp(HomeActivity.this, 50) && vy < -500) { openDrawer(); return true; }
                 if (drawerOpen && vertical && dy > Ui.dp(HomeActivity.this, 70) && vy > 700 && listAtTop()) { closeDrawer(); return true; }
                 return false;
@@ -123,6 +131,7 @@ public class HomeActivity extends Activity {
             }
             home.setPadding(dp(30), top + dp(20), dp(30), bottom + dp(18));
             drawer.setPadding(dp(18), top + dp(14), dp(18), Math.max(bottom, ime));
+            controls.setPadding(top, bottom);
             return ins;
         });
     }
@@ -722,6 +731,7 @@ public class HomeActivity extends Activity {
         loadWeather(false);
         if (Account.signedIn(prefs) && System.currentTimeMillis() - prefs.getLong("acct_at", 0) > 60 * 1000L) refreshAccount();
         if (drawerOpen) refreshDrawer();
+        if (controls.isOpen()) controls.refresh();
     }
 
     @Override
@@ -734,10 +744,12 @@ public class HomeActivity extends Activity {
     protected void onNewIntent(Intent i) {
         super.onNewIntent(i);
         closeDrawer(); // pressing home while the app list is open goes back to the clock
+        controls.close();
     }
 
     @Override
     public void onBackPressed() {
-        if (drawerOpen) closeDrawer();
+        if (controls.isOpen()) controls.close();
+        else if (drawerOpen) closeDrawer();
     }
 }
