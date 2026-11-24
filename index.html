@@ -5747,7 +5747,7 @@ function widgetOptions(it) {
   if (TYPES[it.type].multi) rows.push(optBtn('Card', 'Delete', () => {
     if (!confirm('Delete this card and what is in it?')) return;
     closePop();
-    settings.layout = settings.layout.filter(x => x !== it);
+    { const arr = curLayout().items, i = arr.indexOf(it); if (i >= 0) arr.splice(i, 1); }
     delete settings.data[it.id];
     save(); buildBoard(); renderWidgetList();
   }));
@@ -5795,7 +5795,7 @@ function renderWidgetList() {
         const d = settings.data[it.id];
         const hasStuff = d && ((d.text && d.text.trim()) || (d.items && d.items.length));
         if (hasStuff && !confirm('Delete this card and what is in it?')) return;
-        settings.layout = settings.layout.filter(x => x !== it);
+        { const arr = curLayout().items, i = arr.indexOf(it); if (i >= 0) arr.splice(i, 1); }
         delete settings.data[it.id];
         save(); buildBoard(); renderWidgetList();
       };
