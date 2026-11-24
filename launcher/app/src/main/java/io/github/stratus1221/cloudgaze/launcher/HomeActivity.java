@@ -78,7 +78,8 @@ public class HomeActivity extends Activity {
         buildHome();
         buildDrawer();
         controls = new Controls(this, () -> {});
-        root.addView(controls.view, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
+        root.addView(controls.view, new FrameLayout.LayoutParams(-1, -1));
+        NotifService.watch(this::onNotifs);
         setContentView(root);
         renderHome();
         edgeToEdge();
@@ -90,7 +91,7 @@ public class HomeActivity extends Activity {
                 float dy = b.getY() - a.getY();
                 boolean vertical = Math.abs(vy) > Math.abs(vx) * 1.3f;
                 if (controls.isOpen()) {
-                    if (vertical && dy < -Ui.dp(HomeActivity.this, 40) && vy < -400) { controls.close(); return true; }
+                    if (vertical && dy < -Ui.dp(HomeActivity.this, 40) && vy < -400 && controls.canClose()) { controls.close(); return true; }
                     return false;
                 }
                 if (!drawerOpen && vertical && dy > Ui.dp(HomeActivity.this, 50) && vy > 500) { controls.setH24(cfg.h24); controls.show(); return true; }
@@ -149,7 +150,7 @@ public class HomeActivity extends Activity {
     private Config cfg;
     private String builtKey = "";
     private TextView classMain, classNext, abday;
-    private LinearLayout hwBox;
+    private LinearLayout hwBox, notifBox;
     private String hwKey = "";
 
     private void buildHome() {
@@ -169,7 +170,7 @@ public class HomeActivity extends Activity {
         builtKey = cfg.key;
         home.removeAllViews();
         clock = secs = date = weather = classMain = classNext = abday = null;
-        hwBox = null; favBox = null; hwKey = "";
+        hwBox = null; favBox = null; notifBox = null; hwKey = "";
         boolean flexible = false;
         home.addView(new View(this), new LinearLayout.LayoutParams(-1, dp(56)));
         for (int i = 0; i < cfg.home.length(); i++) {
@@ -237,6 +238,19 @@ public class HomeActivity extends Activity {
                     hwBox.setTag(z);
                     add(hwBox, 22);
                     break;
+                case "notifications": {
+                    LinearLayout wrap = new LinearLayout(this);
+                    wrap.setOrientation(LinearLayout.VERTICAL);
+                    TextView head = Ui.text(this, "NOTIFICATIONS", 11, Ui.C4, Ui.REGULAR);
+                    head.setLetterSpacing(0.12f);
+                    wrap.addView(head);
+                    notifBox = new LinearLayout(this);
+                    notifBox.setOrientation(LinearLayout.VERTICAL);
+                    notifBox.setTag(z);
+                    wrap.addView(notifBox);
+                    add(wrap, 22);
+                    break;
+                }
                 case "space":
                     home.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 1f));
                     flexible = true;
@@ -382,8 +396,20 @@ public class HomeActivity extends Activity {
         }).start();
     }
 
+    private void onNotifs() {
+        renderFavorites();
+        renderNotifs();
+        controls.refreshNotifs();
+    }
+
+    private void renderNotifs() {
+        if (notifBox == null) return;
+        NotifUi.fill(this, notifBox, 3, (Float) notifBox.getTag(), null);
+    }
+
     private void renderFavorites() {
         if (favBox == null) return;
+        java.util.Map<String, Integer> counts = NotifService.counts();
         float z = (Float) favBox.getTag();
         favBox.removeAllViews();
         List<String> keys = Apps.favorites(prefs);
@@ -392,13 +418,32 @@ public class HomeActivity extends Activity {
             Apps.App a = Apps.find(apps, k);
             if (a == null) continue;
             any = true;
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, dp(9), 0, dp(9));
             TextView t = Ui.text(this, a.label, 21 * z, 0xFFCFCFCF, Ui.LIGHT);
-            t.setPadding(0, dp(9), 0, dp(9));
             t.setSingleLine(true);
             t.setEllipsize(TextUtils.TruncateAt.END);
-            t.setOnClickListener(v -> Apps.launch(this, a, v));
-            t.setOnLongClickListener(v -> { favoriteMenu(a, v); return true; });
-            favBox.addView(t, new LinearLayout.LayoutParams(-2, -2));
+            row.addView(t);
+            int n = counts.getOrDefault(a.cn.getPackageName() + "#" + a.user.hashCode(), 0);
+            if (n == 1) {
+                View dot = new View(this);
+                dot.setBackground(Ui.box(this, 0xFFDDDDDD, 0, 4));
+                LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(dp(7), dp(7));
+                dl.leftMargin = dp(10);
+                row.addView(dot, dl);
+            } else if (n > 1) {
+                TextView c = Ui.text(this, String.valueOf(n), 12, 0xFF999999, Ui.REGULAR);
+                c.setBackground(Ui.box(this, 0, 0xFF333333, 10));
+                c.setPadding(dp(7), dp(1), dp(7), dp(2));
+                LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(-2, -2);
+                cl.leftMargin = dp(10);
+                row.addView(c, cl);
+            }
+            row.setOnClickListener(v -> Apps.launch(this, a, v));
+            row.setOnLongClickListener(v -> { favoriteMenu(a, v); return true; });
+            favBox.addView(row, new LinearLayout.LayoutParams(-2, -2));
         }
         if (!any) {
             TextView t = Ui.text(this, "Your favorite apps go here.\nHold an app in the app list to add it.", 13, Ui.C4, Ui.LIGHT);
@@ -725,13 +770,14 @@ public class HomeActivity extends Activity {
         renderHome();
         if (hint != null) hint.setVisibility(prefs.getBoolean("learned", false) ? View.GONE : View.VISIBLE);
         renderFavorites();
+        renderNotifs();
         hwKey = "";
         h.removeCallbacks(ticker);
         ticker.run();
         loadWeather(false);
         if (Account.signedIn(prefs) && System.currentTimeMillis() - prefs.getLong("acct_at", 0) > 60 * 1000L) refreshAccount();
         if (drawerOpen) refreshDrawer();
-        if (controls.isOpen()) controls.refresh();
+        if (controls.isOpen()) { controls.refresh(); controls.refreshNotifs(); }
     }
 
     @Override

@@ -22,7 +22,7 @@ final class Config {
 
     static final String[][] WIDGETS = {
         { "clock", "Clock" }, { "date", "Date" }, { "weather", "Weather" }, { "classes", "Class countdown" },
-        { "abday", "A/B day" }, { "homework", "Homework" }, { "space", "Empty space" }, { "favorites", "Favorite apps" },
+        { "abday", "A/B day" }, { "homework", "Homework" }, { "notifications", "Notifications" }, { "space", "Empty space" }, { "favorites", "Favorite apps" },
     };
 
     Config(Context c, SharedPreferences p) {
@@ -61,7 +61,7 @@ final class Config {
         }
         // put the empty space just above favorites
         JSONArray out = new JSONArray();
-        for (String t : new String[] { "clock", "date", "weather", "classes", "abday", "homework", "space", "favorites" })
+        for (String t : new String[] { "clock", "date", "weather", "classes", "abday", "homework", "notifications", "space", "favorites" })
             for (int i = 0; i < a.length(); i++) if (t.equals(a.optJSONObject(i).optString("type"))) out.put(a.optJSONObject(i));
         return out;
     }

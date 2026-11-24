@@ -974,6 +974,9 @@
   .lp-hr span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lp-d { color: #777; flex: none; font-size: 0.85em; }
   .lp-favorites { margin-top: 12px; text-align: left; }
+  .lp-notifications { margin-top: 14px; text-align: left; }
+  .lp-nc { border: 1px solid #1e1e1e; border-radius: 8px; padding: 5px 7px; margin-top: 5px; font-size: calc(9.5px * var(--z)); color: #ddd; font-weight: 300; }
+  .lp-na { font-size: 0.8em; color: #888; margin-bottom: 1px; }
   .lp-f { font-size: calc(13.5px * var(--z)); color: #cfcfcf; font-weight: 300; padding: 5px 0; }
   .lp-space { flex: 1; }
   .lp-hint { flex: none; text-align: center; font-size: 7.5px; color: #555; margin-top: 14px; }
@@ -7667,7 +7670,7 @@ document.addEventListener('keydown', e => {
 });
 
 // phone launcher: set up the Android launcher's home screen here; the launcher reads it from your account
-const LP_WIDGETS = [['clock', 'Clock'], ['date', 'Date'], ['weather', 'Weather'], ['classes', 'Class countdown'], ['abday', 'A/B day'], ['homework', 'Homework'], ['space', 'Empty space'], ['favorites', 'Favorite apps']];
+const LP_WIDGETS = [['clock', 'Clock'], ['date', 'Date'], ['weather', 'Weather'], ['classes', 'Class countdown'], ['abday', 'A/B day'], ['homework', 'Homework'], ['notifications', 'Notifications'], ['space', 'Empty space'], ['favorites', 'Favorite apps']];
 const LP_URL = 'https://github.com/Stratus-1221/cloudgaze/releases/tag/launcher-latest';
 function launcherCfg() {
   const on = ['clock', 'date', 'weather', 'space', 'favorites'];
@@ -7704,6 +7707,9 @@ function lpPreview(box) {
       all.sort((a, b) => (!a.due) - (!b.due) || (a.due || '').localeCompare(b.due || ''));
       all.slice(0, 6).forEach(a => { const r = mk('div', 'lp-hr'); r.append(mk('span', null, a.t), mk('span', 'lp-d', a.due ? hwDueLabel(a.due, now)[0] : '')); el.append(r); });
       if (!all.length) el.append(mk('div', 'lp-n', 'All done'));
+    } else if (w.type === 'notifications') {
+      el.append(mk('div', 'lp-h', 'NOTIFICATIONS'));
+      [['Messages', 'See you at practice'], ['Canvas', 'New grade posted']].forEach(([a, t]) => { const c = mk('div', 'lp-nc'); c.append(mk('div', 'lp-na', a), mk('div', null, t)); el.append(c); });
     } else if (w.type === 'space') { el.className = 'lp-space'; flex = true; }
     else if (w.type === 'favorites') ['Messages', 'Camera', 'Spotify', 'Canvas'].forEach(n => el.append(mk('div', 'lp-f', n)));
     scr.append(el);
@@ -7752,7 +7758,7 @@ function openLauncherSetup() {
     right.append(mk('div', 'lp-head', 'Weather'));
     right.append(mk('div', 'sub', settings.loc ? `Uses your cloudgaze location, ${settings.loc.name} (°${settings.unit === 'C' ? 'C' : 'F'}). Change it in a Weather widget’s settings.` : 'Set a location in a Weather widget’s settings and the launcher will use it.'));
     const how = mk('div', 'sub');
-    how.innerHTML = `Favorite apps are picked on the phone. Get the launcher at <a href="${LP_URL}" target="_blank" rel="noopener">its download page</a>, then sign in with ${cloud.user ? 'this account' : 'your cloudgaze account'} in its settings. ${cloud.user ? 'Changes reach your phone within a few minutes.' : '<b>Sign in here too</b> (Settings → Account) so your phone can get this.'}`;
+    how.innerHTML = `Favorite apps are picked on the phone. For the Notifications widget and the dots on favorites, allow notification access in the launcher\u2019s settings. Get the launcher at <a href="${LP_URL}" target="_blank" rel="noopener">its download page</a>, then sign in with ${cloud.user ? 'this account' : 'your cloudgaze account'} in its settings. ${cloud.user ? 'Changes reach your phone within a few minutes.' : '<b>Sign in here too</b> (Settings → Account) so your phone can get this.'}`;
     right.append(mk('div', 'lp-head', 'On your phone'), how);
   }
   draw();

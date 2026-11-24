@@ -113,6 +113,15 @@ public class SettingsActivity extends Activity {
             box.addView(status);
         }
 
+        head("Notifications");
+        boolean ok = NotifService.allowed(this);
+        note(ok ? "Allowed. New notifications show as dots on your favorites, in the notifications widget, and when you swipe down."
+                : "Let the launcher read your notifications to show dots on your favorites, a notifications widget, and a list when you swipe down. They never leave your phone.");
+        gap(10);
+        TextView nb = Ui.button(this, ok ? "Notification access settings" : "Allow notification access");
+        nb.setOnClickListener(v -> { try { startActivity(NotifService.accessSettings()); } catch (Exception e) {} });
+        box.addView(nb, new LinearLayout.LayoutParams(-2, -2));
+
         Config cfg = new Config(this, prefs);
         if (cfg.fromAccount) {
             head("Home screen");

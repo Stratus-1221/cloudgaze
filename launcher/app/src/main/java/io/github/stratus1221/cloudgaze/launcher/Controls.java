@@ -25,6 +25,7 @@ import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.GridLayout;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -48,6 +49,8 @@ final class Controls {
     private boolean open, torchOn;
     private String torchId;
     private boolean h24;
+    private final LinearLayout notifList;
+    private final ScrollView notifScroll;
 
     Controls(Activity a, Done onClose) {
         this.a = a;
@@ -64,6 +67,25 @@ final class Controls {
         grid = new GridLayout(a);
         grid.setColumnCount(3);
         view.addView(grid, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout nh = new LinearLayout(a);
+        nh.setOrientation(LinearLayout.HORIZONTAL);
+        nh.setPadding(dp(4), dp(22), dp(4), 0);
+        TextView nt = Ui.text(a, "NOTIFICATIONS", 11, Ui.C4, Ui.REGULAR);
+        nt.setLetterSpacing(0.12f);
+        TextView clear = Ui.text(a, "Clear all", 12, Ui.C3, Ui.REGULAR);
+        clear.setOnClickListener(v -> NotifService.clearAll());
+        nh.addView(nt, new LinearLayout.LayoutParams(0, -2, 1f));
+        nh.addView(clear);
+        view.addView(nh);
+        notifScroll = new ScrollView(a);
+        notifScroll.setVerticalScrollBarEnabled(false);
+        notifList = new LinearLayout(a);
+        notifList.setOrientation(LinearLayout.VERTICAL);
+        notifList.setPadding(dp(4), 0, dp(4), dp(6));
+        notifScroll.addView(notifList);
+        view.addView(notifScroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+
         TextView sys = Ui.button(a, "More phone settings");
         sys.setTextColor(0xFF999999);
         sys.setOnClickListener(v -> expandSystemPanel());
@@ -253,10 +275,17 @@ final class Controls {
 
     void refresh() { for (Runnable r : refreshers) r.run(); }
 
+    void refreshNotifs() { if (open) NotifUi.fill(a, notifList, 30, 1f, this::close); }
+
+    /** Swiping up closes the panel, unless you're scrolling up through a long notification list. */
+    boolean canClose() { return !notifScroll.canScrollVertically(1); }
+
     void show() {
         if (open) return;
         open = true;
         refresh();
+        refreshNotifs();
+        notifScroll.scrollTo(0, 0);
         view.setVisibility(View.VISIBLE);
         view.setAlpha(0f);
         view.setTranslationY(-dp(60));
