@@ -1,10 +1,10 @@
-# glance
+# cloudgaze
 
 A minimal, all-black clock for your desk or classroom screen: bell schedule countdown with A/B days, weather, and widgets you can move around (checklists, notes, homework with Canvas import, study timer, reminders, alarms and more).
 
 Made by Stratus1221.
 
-Live at **https://stratus-1221.github.io/glance/**
+Live at **https://stratus-1221.github.io/cloudgaze/**
 
 ## Use it
 

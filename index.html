@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>glance</title>
+<title>cloudgaze</title>
 <link rel="icon" id="fav" href="data:,">
 <style>
   /* colors */
@@ -963,7 +963,7 @@
     <div class="row"><button class="btn primary" id="editLayout">Edit layout <span class="hint" data-kh="edit">(E)</span></button><button class="btn" id="resetLayout">Reset layout</button></div>
   </div>
 
-  <div class="credit">glance · made by Stratus1221</div>
+  <div class="credit">cloudgaze · made by Stratus1221</div>
 </div>
 
 <div id="wpop"></div>
@@ -2136,7 +2136,7 @@ const spRedirect = () => location.origin + location.pathname;
 const spLoad = () => { try { return JSON.parse(localStorage.getItem('clockSpotify')) || null; } catch (e) { return null; } };
 const spSaveLocal = t => { spot.tok = t; try { t ? localStorage.setItem('clockSpotify', JSON.stringify(t)) : localStorage.removeItem('clockSpotify'); } catch (e) {} };
 const spSave = t => { spSaveLocal(t); spCloudPut(t); };
-// Spotify sign-in shared through your glance account, so new devices are connected as soon as you sign in to glance.
+// Spotify sign-in shared through your cloudgaze account, so new devices are connected as soon as you sign in to cloudgaze.
 // Stored next to your clock in your own Firestore document (only you can read it). Not part of backups or share codes.
 function spCloudPut(t) {
   if (!cloud.user || !cloud.fb) return;
@@ -2165,7 +2165,7 @@ const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(
 async function spConnect() {
   const id = (settings.spotifyClient || '').trim();
   if (!id) { toast('Paste your Spotify Client ID in the widget settings first', 3); return; }
-  if (location.protocol === 'file:') { toast('Spotify sign-in works on the website version of glance', 3); return; }
+  if (location.protocol === 'file:') { toast('Spotify sign-in works on the website version of cloudgaze', 3); return; }
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
   const state = b64url(crypto.getRandomValues(new Uint8Array(12)));
@@ -2240,7 +2240,7 @@ async function spPoll() {
   spPaint();
   spot.timer = setTimeout(spPoll, spot.st && spot.st.is_playing ? 4000 : 10000);
 }
-// pick the device to wake: glance's own player, then the last one you used, then any
+// pick the device to wake: cloudgaze's own player, then the last one you used, then any
 async function spWakeDevice() {
   if (spot.sdkDev) return spot.sdkDev;
   const { status, j } = await spApi('GET', '/me/player/devices');
@@ -2264,13 +2264,13 @@ async function spCmd(method, path, optimistic) {
           else status = 204;
         }
       }
-      if (status === 404) toast(spot.sdkDev ? 'Spotify didn\u2019t respond. Try again in a second' : 'Open Spotify on a device, or turn on \u201cPlay music in glance\u201d', 3);
+      if (status === 404) toast(spot.sdkDev ? 'Spotify didn\u2019t respond. Try again in a second' : 'Open Spotify on a device, or turn on \u201cPlay music in cloudgaze\u201d', 3);
     }
     if (status === 403) toast('Spotify only allows this with Premium', 2.5);
   } catch (e) { toast('Can\u2019t reach Spotify right now', 2); }
   clearTimeout(spot.timer); spot.timer = setTimeout(spPoll, 600);
 }
-// glance as a Spotify player (Web Playback SDK)
+// cloudgaze as a Spotify player (Web Playback SDK)
 const spWantHere = () => refs.some(r => r.it.type === 'spotify' && opt(r.it, 'here', false));
 const spHasStreaming = () => { const t = spot.tok || spLoad(); return !!(t && / ?streaming/.test(t.scope || '')); };
 function spActivate() { try { spot.player && spot.player.activateElement && spot.player.activateElement(); } catch (e) {} }
@@ -2279,17 +2279,17 @@ function spStartPlayer() {
   if (!spHasStreaming()) { spot.sdkErr = 'reconnect'; spPaint(); return; }
   spot.sdkLoading = true; spot.sdkErr = '';
   const make = () => {
-    const pl = new Spotify.Player({ name: 'glance', volume: 0.7, getOAuthToken: cb => { spAccess().then(t => t && cb(t)); } });
+    const pl = new Spotify.Player({ name: 'cloudgaze', volume: 0.7, getOAuthToken: cb => { spAccess().then(t => t && cb(t)); } });
     spot.player = pl;
     const fail = msg => { spot.sdkErr = msg; spot.sdkDev = null; spPaint(); };
-    pl.addListener('ready', ({ device_id }) => { spot.sdkDev = device_id; spot.sdkErr = ''; clearTimeout(spot.sdkTimer); spPaint(); toast('glance is ready as a Spotify player', 2); });
+    pl.addListener('ready', ({ device_id }) => { spot.sdkDev = device_id; spot.sdkErr = ''; clearTimeout(spot.sdkTimer); spPaint(); toast('cloudgaze is ready as a Spotify player', 2); });
     pl.addListener('not_ready', () => { spot.sdkDev = null; spPaint(); });
     pl.addListener('initialization_error', () => fail('This browser can\u2019t play Spotify inside a page.'));
     pl.addListener('authentication_error', () => fail('reconnect'));
-    pl.addListener('account_error', () => fail('Spotify says playing inside glance needs Premium.'));
+    pl.addListener('account_error', () => fail('Spotify says playing inside cloudgaze needs Premium.'));
     pl.addListener('autoplay_failed', () => toast('Click the Spotify widget once to allow sound', 3));
     pl.addListener('player_state_changed', () => { clearTimeout(spot.timer); spot.timer = setTimeout(spPoll, 300); });
-    spot.sdkTimer = setTimeout(() => { if (!spot.sdkDev) fail('Spotify didn\u2019t let glance become a player. Spotify may not allow this for new personal apps. The other controls still work.'); }, 20000);
+    spot.sdkTimer = setTimeout(() => { if (!spot.sdkDev) fail('Spotify didn\u2019t let cloudgaze become a player. Spotify may not allow this for new personal apps. The other controls still work.'); }, 20000);
     pl.connect();
   };
   if (window.Spotify && Spotify.Player) return make();
@@ -2304,7 +2304,7 @@ function spStopPlayer() {
   if (spot.player) { try { spot.player.disconnect(); } catch (e) {} }
   spot.player = null; spot.sdkDev = null; spot.sdkLoading = false; spot.sdkErr = '';
 }
-// move the music from glance back to your Spotify app
+// move the music from cloudgaze back to your Spotify app
 async function spPlayBack() {
   const { status, j } = await spApi('GET', '/me/player/devices');
   const list = (status === 200 && j && j.devices || []).filter(d => d.id !== spot.sdkDev);
@@ -4149,7 +4149,7 @@ const TYPES = {
       const hr = mk('span'); hr.style.display = 'flex'; hr.style.gap = '0.8em'; hr.style.alignItems = 'center'; hr.style.minWidth = '0';
       ref.dev = mk('span', 'spdev');
       ref.here = mk('button', 'mini', 'Play here');
-      ref.here.title = 'Move the music to glance';
+      ref.here.title = 'Move the music to cloudgaze';
       ref.here.onclick = e => { e.stopPropagation(); spPlayHere(); };
       ref.here.addEventListener('pointerdown', e => e.stopPropagation());
       ref.back = mk('button', 'mini', 'Back to Spotify');
@@ -4236,11 +4236,11 @@ const TYPES = {
         };
         ref.here.style.display = 'none'; ref.back.style.display = 'none';
         if (!settings.spotifyClient) return showMsg('Set up Spotify in this widget’s settings (press E, then its gear).');
-        if (connected && opt(ref.it, 'here', false) && spot.sdkErr === 'reconnect') return showMsg('Reconnect Spotify once so glance can play music itself.', 'Reconnect', spConnect);
+        if (connected && opt(ref.it, 'here', false) && spot.sdkErr === 'reconnect') return showMsg('Reconnect Spotify once so cloudgaze can play music itself.', 'Reconnect', spConnect);
         if (!connected) return showMsg(spot.err || 'Connect your Spotify account to see and control what’s playing.', 'Connect Spotify', spConnect);
         if (spot.err && !st) return showMsg(spot.err, 'Try again', spPoll);
         if (!it) {
-          if (spot.sdkDev) return showMsg('Nothing playing.', 'Play in glance', spPlayHere);
+          if (spot.sdkDev) return showMsg('Nothing playing.', 'Play in cloudgaze', spPlayHere);
           if (opt(ref.it, 'here', false) && spot.sdkErr) return showMsg(spot.sdkErr);
           return showMsg('Nothing playing right now.', 'Resume', () => spCmd('PUT', '/me/player/play'));
         }
@@ -5390,10 +5390,10 @@ function widgetOptions(it) {
       const connected = !!(spot.tok || spLoad());
       rows.push(
         optNode('Client ID', idIn), help,
-        mk('div', 'sub', cloud.user ? 'Your Spotify sign-in syncs through your glance account, so your other devices connect by themselves. Disconnect signs out everywhere.' : 'Sign in to glance and your Spotify connection carries over to your other devices.'),
+        mk('div', 'sub', cloud.user ? 'Your Spotify sign-in syncs through your cloudgaze account, so your other devices connect by themselves. Disconnect signs out everywhere.' : 'Sign in to cloudgaze and your Spotify connection carries over to your other devices.'),
         optBtn('Account', connected ? 'Disconnect' : 'Connect', () => { if (connected) { spSave(null); spot.st = null; afterOptChange(); spPaint(); } else spConnect(); }),
-        optSeg('Play music in glance (beta)', ONOFF, O('here', false), v => { setOpt(it, 'here', v); if (!v) spStopPlayer(); setTimeout(spPoll, 50); }),
-        mk('div', 'sub', 'glance becomes its own Spotify speaker, so you don\u2019t need the Spotify app open. It plays sound from this tab. Spotify may not allow it for new personal apps; if so, everything else still works.'),
+        optSeg('Play music in cloudgaze (beta)', ONOFF, O('here', false), v => { setOpt(it, 'here', v); if (!v) spStopPlayer(); setTimeout(spPoll, 50); }),
+        mk('div', 'sub', 'cloudgaze becomes its own Spotify speaker, so you don\u2019t need the Spotify app open. It plays sound from this tab. Spotify may not allow it for new personal apps; if so, everything else still works.'),
         optSeg('Cover art', ONOFF, O('art', true), S('art')),
         optSeg('Progress bar', ONOFF, O('progress', true), S('progress')),
         optSeg('Volume slider', ONOFF, O('volume', true), S('volume')),
@@ -5912,7 +5912,7 @@ function render() {
   const now = new Date();
   drawFavicon(now.getHours(), now.getMinutes());
   const st = status(now);
-  const title = st.title || 'glance';
+  const title = st.title || 'cloudgaze';
   if (document.title !== title) document.title = title;
   checkAutoLayout(st);
   for (const ref of refs) {
@@ -5941,7 +5941,7 @@ function tick() {
   clearTimeout(tickTimer);
   if (document.hidden) {
     const now = new Date(), st = status(now);
-    const title = st.title || 'glance';
+    const title = st.title || 'cloudgaze';
     if (document.title !== title) document.title = title;
     drawFavicon(now.getHours(), now.getMinutes());
     needSeconds = !!st.title;
@@ -6288,7 +6288,7 @@ $('pasteBtn').onclick = () => {
 
 // backup file
 $('saveFileBtn').onclick = () => {
-  download(`glance backup ${ymd(new Date())}.json`, new Blob([settingsJSON(2)], { type: 'application/json' }));
+  download(`cloudgaze backup ${ymd(new Date())}.json`, new Blob([settingsJSON(2)], { type: 'application/json' }));
   flashBtn($('saveFileBtn'), 'Saved ✓');
 };
 $('loadFileBtn').onclick = () => { $('fileIn').value = ''; $('fileIn').click(); };
@@ -6412,7 +6412,7 @@ function scheduleForShare(withNames) {
 }
 function needCloud(what) {
   if (cloud.ready) return true;
-  showModal({ title: what, body: [location.protocol === 'file:' ? 'This works on the website version of glance (it needs the online database).' : 'The online database isn’t ready yet. Check your internet and try again.'], actions: [{ label: 'OK', primary: true }] });
+  showModal({ title: what, body: [location.protocol === 'file:' ? 'This works on the website version of cloudgaze (it needs the online database).' : 'The online database isn’t ready yet. Check your internet and try again.'], actions: [{ label: 'OK', primary: true }] });
   return false;
 }
 function shareSchedule() {
@@ -6516,19 +6516,19 @@ $('fbBtn').onclick = e => { e.stopPropagation(); openFeedback(); };
 // what's new
 const VERSION = '1.10';
 const CHANGELOG = [
-  { v: '1.10', items: ['A/B day widget', 'Spotify: drag the dot on the progress bar to skip around, Resume button, and it wakes a sleeping Spotify by itself', 'Spotify: play music in glance itself (beta)', 'Spotify widget: what\u2019s playing, play/pause, skip and volume on any of your devices', 'Double-click homework to change its name, class or due date', 'Clear done button for homework', 'Signing in lets you pick this computer\u2019s clock, your account\u2019s, or both'] },
+  { v: '1.10', items: ['A/B day widget', 'Spotify: drag the dot on the progress bar to skip around, Resume button, and it wakes a sleeping Spotify by itself', 'Spotify: play music in cloudgaze itself (beta)', 'Spotify widget: what\u2019s playing, play/pause, skip and volume on any of your devices', 'Double-click homework to change its name, class or due date', 'Clear done button for homework', 'Signing in lets you pick this computer\u2019s clock, your account\u2019s, or both'] },
   { v: '1.9', items: ['Metronome with tap tempo', 'Tuner for viola, violin, cello, bass and guitar', 'Quick links', 'Flashcards', 'Weather alert banner for warnings near you', 'Polyrhythm trainer', 'New setup with presets and sign-in, plus a guided tour (Settings → Help → Tour)', 'Metronome and polyrhythm vibrate on phones', 'Music preset', 'Sync button, and sync merges changes from all your computers', 'Version number at the bottom of Settings'] },
   { v: '1.8', items: ['Share a link to your layout, or a code for your bell schedule', 'Send feedback from Settings', 'Phone layout: widgets stack in one column', 'Ctrl+K searches every widget and setting', 'Fine grid for exact placement', 'A dozen fonts', 'Your own photo as the background', 'Seasonal effects: leaves, snow, petals, fireflies', 'Each layout can have its own background', 'Ring look for the class countdown', 'Alarm sounds you can pick'] },
   { v: '1.7', items: ['Bright text mode', 'On this day skips grim events and can show birthdays', 'Today’s schedule, day timeline, today agenda, search box, daily checklist, message board, On this day widgets'] },
   { v: '1.6', items: ['Keep me signed in', 'Background button', 'More presets'] },
-  { v: 'Before 1.6', items: ['The first glance: a big clock, weather and date on a black screen', 'Bell schedule with A/B days, the class countdown, progress bar and up next', 'Widgets you can turn on, move, resize and set up one by one', 'Layouts, backgrounds, presets, alarms, timers, homework and more', 'Accounts that sync your clock between computers'] },
+  { v: 'Before 1.6', items: ['The first cloudgaze: a big clock, weather and date on a black screen', 'Bell schedule with A/B days, the class countdown, progress bar and up next', 'Widgets you can turn on, move, resize and set up one by one', 'Layouts, backgrounds, presets, alarms, timers, homework and more', 'Accounts that sync your clock between computers'] },
 ];
 function verCmp(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
   for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0);
   return 0;
 }
-setText($('verLine'), `glance ${VERSION}`);
+setText($('verLine'), `cloudgaze ${VERSION}`);
 $('verLine').onclick = e => { e.stopPropagation(); showWhatsNew(true); };
 function showWhatsNew(force) {
   const seen = settings.seenVersion;
@@ -6542,7 +6542,7 @@ function showWhatsNew(force) {
     box.append(ul);
   });
   settings.seenVersion = VERSION; save();
-  showModal({ title: 'What’s new in glance', body: [box], actions: [{ label: 'Full changelog', fn: () => { showChangelog(); return false; } }, { label: 'Nice', primary: true }] });
+  showModal({ title: 'What’s new in cloudgaze', body: [box], actions: [{ label: 'Full changelog', fn: () => { showChangelog(); return false; } }, { label: 'Nice', primary: true }] });
 }
 function showChangelog() {
   const box = mk('div', 'wn wnall');
@@ -6712,8 +6712,8 @@ function renderSetup() {
   const small = t => box.append(mk('div', 'su-small', t));
 
   if (setupStep === 0) {
-    title('Welcome to glance');
-    text('glance turns any screen into a calm, minimal clock for school. Leave it open on a spare monitor, a laptop in class or your phone.');
+    title('Welcome to cloudgaze');
+    text('cloudgaze turns any screen into a calm, minimal clock for school. Leave it open on a spare monitor, a laptop in class or your phone.');
     list(['<b>Your bell schedule</b> with what’s now, what’s next and how long is left',
           '<b>Widgets</b> you can move anywhere: homework, weather, timers, a metronome and tuner, flashcards and more',
           '<b>Layouts and backgrounds</b> for school, home or bedtime',
@@ -6779,10 +6779,10 @@ function renderSetup() {
   } else if (setupStep === 5) {
     title('Sync between computers');
     text('Optional. Make a free account with any email and your clock, homework and notes follow you to every computer and your phone.');
-    if (!FIREBASE_CONFIG || !cloud.ready) small(location.protocol === 'file:' ? 'Accounts work on the website version of glance.' : 'Accounts are still loading. You can sign in later from Settings.');
+    if (!FIREBASE_CONFIG || !cloud.ready) small(location.protocol === 'file:' ? 'Accounts work on the website version of cloudgaze.' : 'Accounts are still loading. You can sign in later from Settings.');
     else if (cloud.user) box.append(mk('div', 'su-ok', `Signed in as ${cloud.user.email}`));
     else { const r = mk('div', 'btns'); r.append(edBtn('Sign in or create account', 'btn primary', () => openAcct())); box.append(r); }
-    small('Synced data is stored in glance’s Firebase database. Only you can open it from the site. The person who runs glance can see the database in Google’s admin console, but doesn’t look at or share it. Backups: Settings → Backup file → Save.');
+    small('Synced data is stored in cloudgaze’s Firebase database. Only you can open it from the site. The person who runs cloudgaze can see the database in Google’s admin console, but doesn’t look at or share it. Backups: Settings → Backup file → Save.');
     actions.append(go(4), dots(5), spacer, go(6));
   } else {
     title('You’re all set');
@@ -7351,7 +7351,7 @@ document.addEventListener('dblclick', e => {
   else document.exitFullscreen?.();
 });
 
-// glance · made by Stratus1221
+// cloudgaze · made by Stratus1221
 </script>
 </body>
 </html>
