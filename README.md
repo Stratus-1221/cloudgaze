@@ -35,7 +35,3 @@ Accounts let people sign in and get the same clock at school and at home. It's f
 The config values are meant to be public. The rules in `firestore.rules` are what keep each person's data private.
 
 Sign-in only works on the website, not when you open the file straight from your computer.
-
-## Launcher (in progress)
-
-`launcher/` is a separate Android home-screen app with the same look. GitHub builds it automatically; the newest build is on the **launcher-latest** release page as `cloudgaze-launcher.apk`.

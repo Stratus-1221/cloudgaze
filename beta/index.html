@@ -951,47 +951,6 @@
     .kh, [data-kh], #helpBtn { display: none; }
     .lp { transition: background 0.3s; background: rgba(255,255,255,0.06); border-radius: 6px; }
   }
-  /* phone launcher setup */
-  #gmBox.wide { width: min(860px, 94vw); max-height: 92vh; overflow-y: auto; box-sizing: border-box; }
-  .lp-wrap { display: flex; gap: 26px; align-items: flex-start; }
-  .lp-phone { flex: none; position: sticky; top: 0; }
-  .lp-scr { width: 250px; height: 520px; box-sizing: border-box; background: #000; border: 6px solid #222; border-radius: 30px; padding: 0 20px 14px;
-    display: flex; flex-direction: column; overflow: hidden; font-family: Roboto, -apple-system, "Segoe UI", sans-serif; }
-  .lp-top { height: 40px; flex: none; }
-  .lp-w { --z: 1; flex: none; text-align: center; }
-  .lp-clock { display: flex; justify-content: center; align-items: baseline; gap: 4px; color: #e6e6e6; font-weight: 100; }
-  .lp-t { font-size: calc(54px * var(--z)); letter-spacing: -0.5px; }
-  .lp-s { font-size: calc(17px * var(--z)); color: #777; }
-  .lp-date { margin-top: 10px; font-size: calc(9px * var(--z)); letter-spacing: 0.14em; color: #8a8a8a; font-weight: 300; }
-  .lp-weather { margin-top: 8px; font-size: calc(10.5px * var(--z)); color: #aaa; font-weight: 300; }
-  .lp-classes { margin-top: 12px; }
-  .lp-m { font-size: calc(12.5px * var(--z)); color: #cfcfcf; font-weight: 300; }
-  .lp-n { margin-top: 4px; font-size: calc(9px * var(--z)); color: #777; }
-  .lp-abday { margin-top: 10px; font-size: calc(15px * var(--z)); color: #9a9a9a; font-weight: 300; letter-spacing: 0.06em; }
-  .lp-homework { margin-top: 14px; text-align: left; }
-  .lp-h { font-size: 7.5px; letter-spacing: 0.12em; color: #555; }
-  .lp-hr { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; font-size: calc(10.5px * var(--z)); color: #ccc; font-weight: 300; }
-  .lp-hr span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .lp-d { color: #777; flex: none; font-size: 0.85em; }
-  .lp-favorites { margin-top: 12px; text-align: left; }
-  .lp-notifications { margin-top: 14px; text-align: left; }
-  .lp-nc { border: 1px solid #1e1e1e; border-radius: 8px; padding: 5px 7px; margin-top: 5px; font-size: calc(9.5px * var(--z)); color: #ddd; font-weight: 300; }
-  .lp-na { font-size: 0.8em; color: #888; margin-bottom: 1px; }
-  .lp-f { font-size: calc(13.5px * var(--z)); color: #cfcfcf; font-weight: 300; padding: 5px 0; }
-  .lp-space { flex: 1; }
-  .lp-hint { flex: none; text-align: center; font-size: 7.5px; color: #555; margin-top: 14px; }
-  .lp-ctl { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-  .lp-head { color: #ccc; margin-top: 10px; font-size: 13px; }
-  .lp-head:first-child { margin-top: 0; }
-  .lp-row { display: flex; align-items: center; gap: 6px; }
-  .lp-row label { flex: 1; display: flex; align-items: center; gap: 8px; cursor: pointer; color: #bbb; }
-  .lp-row.off label { color: #666; }
-  .lp-row input { accent-color: #888; margin: 0; }
-  .lp-row .seg button { padding: 3px 8px; }
-  .lp-row .mini { background: none; border: 1px solid #222; border-radius: 5px; color: #888; width: 26px; height: 24px; cursor: pointer; }
-  .lp-row .mini:disabled { opacity: 0.3; cursor: default; }
-  .lp-ctl a { color: #aaa; }
-  @media (max-width: 700px) { .lp-wrap { flex-direction: column; align-items: center; } .lp-phone { position: static; } }
 </style>
 </head>
 <body>
@@ -1041,8 +1000,6 @@
       <span class="btns"><button class="btn" id="saveFileBtn">Save</button><button class="btn" id="loadFileBtn">Load</button></span></div>
     <div class="row"><span>Backup code</span>
       <span class="btns"><button class="btn" id="copyBtn">Copy</button><button class="btn" id="pasteBtn">Paste</button></span></div>
-    <div class="row"><span>Phone launcher</span>
-      <span class="btns"><button class="btn" id="launcherBtn">Set up…</button></span></div>
     <div class="row"><span>Share</span>
       <span class="btns"><button class="btn" id="shareLayBtn">Layout link</button><button class="btn" id="shareSchBtn">Schedule code</button></span></div>
     <div class="row"><span>Help</span>
@@ -6838,7 +6795,7 @@ $('fbBtn').onclick = e => { e.stopPropagation(); openFeedback(); };
 // what's new
 const VERSION = '2.0';
 const CHANGELOG = [
-  { v: '2.0', items: ['Phones: a phone layout of its own. Edit it on your phone: drag widgets up and down and make them taller or shorter', 'Phones: settings slide up from the bottom, buttons are easy to tap, and press and hold edits list items', 'Install cloudgaze as an app: an icon on your home screen, no browser bar, and it opens without internet', 'Set up the cloudgaze phone launcher from here: Settings \u2192 Phone launcher'] },
+  { v: '2.0', items: ['Phones: a phone layout of its own. Edit it on your phone: drag widgets up and down and make them taller or shorter', 'Phones: settings slide up from the bottom, buttons are easy to tap, and press and hold edits list items', 'Install cloudgaze as an app: an icon on your home screen, no browser bar, and it opens without internet'] },
   { v: '1.11', items: ['New name: cloudgaze', 'Background effects are a checklist now, so you can mix clouds, leaves, snow and more', 'Puffier, softer clouds that light up at sunset and turn grey when it\u2019s overcast', 'New effects to pick by hand: leaves, petals, fireflies and summer light', 'Weather effects add clouds behind rain and snow'] },
   { v: '1.10', items: ['A/B day widget', 'Spotify: drag the dot on the progress bar to skip around, Resume button, and it wakes a sleeping Spotify by itself', 'Spotify: play music in cloudgaze itself (beta)', 'Spotify widget: what\u2019s playing, play/pause, skip and volume on any of your devices', 'Double-click homework to change its name, class or due date', 'Clear done button for homework', 'Signing in lets you pick this computer\u2019s clock, your account\u2019s, or both'] },
   { v: '1.9', items: ['Metronome with tap tempo', 'Tuner for viola, violin, cello, bass and guitar', 'Quick links', 'Flashcards', 'Weather alert banner for warnings near you', 'Polyrhythm trainer', 'New setup with presets and sign-in, plus a guided tour (Settings → Help → Tour)', 'Metronome and polyrhythm vibrate on phones', 'Music preset', 'Sync button, and sync merges changes from all your computers', 'Version number at the bottom of Settings'] },
@@ -7668,106 +7625,6 @@ document.addEventListener('keydown', e => {
   if (is('edit')) setLayoutEdit(!document.body.classList.contains('layout-edit'));
   if (is('layout')) { if (settings.layouts.length > 1) cycleLayout(); else toast('Only one layout. Add one in Settings → Widgets.', 2); }
 });
-
-// phone launcher: set up the Android launcher's home screen here; the launcher reads it from your account
-const LP_WIDGETS = [['clock', 'Clock'], ['date', 'Date'], ['weather', 'Weather'], ['classes', 'Class countdown'], ['abday', 'A/B day'], ['homework', 'Homework'], ['notifications', 'Notifications'], ['space', 'Empty space'], ['favorites', 'Favorite apps']];
-const LP_URL = 'https://github.com/Stratus-1221/cloudgaze/releases/tag/launcher-latest';
-function launcherCfg() {
-  const on = ['clock', 'date', 'weather', 'space', 'favorites'];
-  const L = settings.launcher || (settings.launcher = { clock: '', seconds: true, drawer: 'list', home: LP_WIDGETS.map(([type]) => ({ type, on: on.includes(type), size: 1 })) });
-  for (const [type] of LP_WIDGETS) if (!L.home.some(w => w.type === type)) L.home.push({ type, on: false, size: 1 });
-  return L;
-}
-function lpPreview(box) {
-  const L = launcherCfg(), now = new Date();
-  box.innerHTML = '';
-  const h24 = L.clock ? L.clock === '24' : !!settings.h24;
-  const scr = mk('div', 'lp-scr');
-  scr.append(mk('div', 'lp-top'));
-  let flex = false;
-  for (const w of L.home) {
-    if (!w.on) continue;
-    const z = w.size || 1, el = mk('div', 'lp-w lp-' + w.type);
-    el.style.setProperty('--z', z);
-    if (w.type === 'clock') {
-      const hh = h24 ? String(now.getHours()).padStart(2, '0') : String(now.getHours() % 12 || 12);
-      el.append(mk('span', 'lp-t', `${hh}:${String(now.getMinutes()).padStart(2, '0')}`));
-      if (L.seconds) el.append(mk('span', 'lp-s', String(now.getSeconds()).padStart(2, '0')));
-    } else if (w.type === 'date') el.textContent = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
-    else if (w.type === 'weather') {
-      el.textContent = wx && wx.current ? `${Math.round(wx.current.temperature_2m)}° · ${CODES[wx.current.weather_code] || ''} · ${Math.round(wx.daily.temperature_2m_max[0])}° / ${Math.round(wx.daily.temperature_2m_min[0])}°` : 'Weather';
-    } else if (w.type === 'classes') {
-      const st = status(now);
-      el.append(mk('div', 'lp-m', st.main || 'Class countdown'), mk('div', 'lp-n', [st.next, st.day].filter(Boolean).join('  ·  ')));
-    } else if (w.type === 'abday') el.textContent = isSchoolDay(now) ? letterFor(now) + ' Day' : 'No school';
-    else if (w.type === 'homework') {
-      el.append(mk('div', 'lp-h', 'HOMEWORK'));
-      const all = [];
-      for (const lay of settings.layouts) for (const it of lay.items) if (it.type === 'homework' && settings.data[it.id]) for (const a of settings.data[it.id].list || []) if (!a.done && !all.includes(a)) all.push(a);
-      all.sort((a, b) => (!a.due) - (!b.due) || (a.due || '').localeCompare(b.due || ''));
-      all.slice(0, 6).forEach(a => { const r = mk('div', 'lp-hr'); r.append(mk('span', null, a.t), mk('span', 'lp-d', a.due ? hwDueLabel(a.due, now)[0] : '')); el.append(r); });
-      if (!all.length) el.append(mk('div', 'lp-n', 'All done'));
-    } else if (w.type === 'notifications') {
-      el.append(mk('div', 'lp-h', 'NOTIFICATIONS'));
-      [['Messages', 'See you at practice'], ['Canvas', 'New grade posted']].forEach(([a, t]) => { const c = mk('div', 'lp-nc'); c.append(mk('div', 'lp-na', a), mk('div', null, t)); el.append(c); });
-    } else if (w.type === 'space') { el.className = 'lp-space'; flex = true; }
-    else if (w.type === 'favorites') ['Messages', 'Camera', 'Spotify', 'Canvas'].forEach(n => el.append(mk('div', 'lp-f', n)));
-    scr.append(el);
-  }
-  if (!flex) scr.append(mk('div', 'lp-space'));
-  box.append(scr);
-}
-function openLauncherSetup() {
-  const L = launcherCfg();
-  const wrap = mk('div', 'lp-wrap'), left = mk('div', 'lp-phone'), right = mk('div', 'lp-ctl');
-  wrap.append(left, right);
-  const changed = () => { save(); draw(); };
-  const seg = (choices, cur, set) => {
-    const g = mk('div', 'seg');
-    choices.forEach(([v, l]) => { const b = mk('button', String(cur) === String(v) ? 'on' : '', l); b.onclick = e => { e.stopPropagation(); set(v); changed(); }; g.append(b); });
-    return g;
-  };
-  const row = (label, node) => { const r = mk('div', 'row'); r.append(mk('span', null, label), node); return r; };
-  function draw() {
-    lpPreview(left);
-    right.innerHTML = '';
-    right.append(mk('div', 'lp-head', 'Home screen'));
-    L.home.forEach((w, i) => {
-      const r = mk('div', 'lp-row' + (w.on ? '' : ' off'));
-      const lab = mk('label'), cb = mk('input');
-      cb.type = 'checkbox'; cb.checked = !!w.on;
-      cb.onchange = () => { w.on = cb.checked; changed(); };
-      lab.append(cb, (LP_WIDGETS.find(x => x[0] === w.type) || [0, w.type])[1]);
-      const up = mk('button', 'mini', '↑'), dn = mk('button', 'mini', '↓');
-      up.title = 'Move up'; dn.title = 'Move down';
-      up.disabled = i === 0; dn.disabled = i === L.home.length - 1;
-      up.onclick = e => { e.stopPropagation(); L.home.splice(i - 1, 0, L.home.splice(i, 1)[0]); changed(); };
-      dn.onclick = e => { e.stopPropagation(); L.home.splice(i + 1, 0, L.home.splice(i, 1)[0]); changed(); };
-      r.append(lab);
-      if (w.type !== 'space') r.append(seg([[0.8, 'S'], [1, 'M'], [1.25, 'L']], w.size || 1, v => { w.size = v; }));
-      r.append(up, dn);
-      right.append(r);
-    });
-    right.append(mk('div', 'sub', 'Empty space pushes everything under it to the bottom of the screen.'));
-    right.append(mk('div', 'lp-head', 'Clock'));
-    right.append(row('Hours', seg([['', 'Like the phone'], ['12', '12h'], ['24', '24h']], L.clock || '', v => { L.clock = v; })));
-    right.append(row('Seconds', seg([[true, 'On'], [false, 'Off']], L.seconds !== false, v => { L.seconds = v; })));
-    right.append(mk('div', 'lp-head', 'App list'));
-    right.append(row('Style', seg([['list', 'List'], ['search', 'Search'], ['grid', 'Icons']], L.drawer || 'list', v => { L.drawer = v; })));
-    right.append(mk('div', 'sub', 'Swipe up on the phone to open it. List shows every app A–Z, Search opens the keyboard right away, Icons is a grid.'));
-    right.append(mk('div', 'lp-head', 'Weather'));
-    right.append(mk('div', 'sub', settings.loc ? `Uses your cloudgaze location, ${settings.loc.name} (°${settings.unit === 'C' ? 'C' : 'F'}). Change it in a Weather widget’s settings.` : 'Set a location in a Weather widget’s settings and the launcher will use it.'));
-    const how = mk('div', 'sub');
-    how.innerHTML = `Favorite apps are picked on the phone. For the Notifications widget and the dots on favorites, allow notification access in the launcher\u2019s settings. Get the launcher at <a href="${LP_URL}" target="_blank" rel="noopener">its download page</a>, then sign in with ${cloud.user ? 'this account' : 'your cloudgaze account'} in its settings. ${cloud.user ? 'Changes reach your phone within a few minutes.' : '<b>Sign in here too</b> (Settings → Account) so your phone can get this.'}`;
-    right.append(mk('div', 'lp-head', 'On your phone'), how);
-  }
-  draw();
-  const timer = setInterval(() => lpPreview(left), 1000);
-  showModal({ title: 'Phone launcher', body: [wrap], actions: [{ label: 'Done', primary: true }] });
-  $('gmBox').classList.add('wide');
-  modalOnClose = () => { clearInterval(timer); $('gmBox').classList.remove('wide'); };
-}
-$('launcherBtn').onclick = e => { e.stopPropagation(); openLauncherSetup(); };
 
 // install as an app: the service worker keeps a copy so it opens without internet
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
