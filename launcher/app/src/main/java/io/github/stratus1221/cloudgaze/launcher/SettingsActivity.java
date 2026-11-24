@@ -60,6 +60,67 @@ public class SettingsActivity extends Activity {
         box.addView(makeHome, new LinearLayout.LayoutParams(-1, -2));
         note("Pick cloudgaze as your default home app. Press the home button to come back here any time.");
 
+        head("cloudgaze account");
+        if (Account.signedIn(prefs)) {
+            note("Signed in as " + Account.email(prefs) + ". Your classes, homework and weather location come from cloudgaze.");
+            gap(10);
+            LinearLayout btns = new LinearLayout(this);
+            btns.setOrientation(LinearLayout.HORIZONTAL);
+            TextView now = Ui.button(this, "Sync now");
+            TextView out = Ui.button(this, "Sign out");
+            TextView status = Ui.text(this, "", 13, Ui.C3, Ui.REGULAR);
+            now.setOnClickListener(v -> {
+                status.setText("Syncing\u2026");
+                new Thread(() -> {
+                    String m;
+                    try { Account.fetch(prefs); m = "Up to date"; } catch (Exception e) { m = "Couldn\u2019t sync. Check your internet."; }
+                    String mm = m;
+                    runOnUiThread(() -> { status.setText(mm); rebuild(); });
+                }).start();
+            });
+            out.setOnClickListener(v -> { Account.signOut(prefs); rebuild(); });
+            LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-2, -2);
+            bl.rightMargin = dp(10);
+            btns.addView(now, bl);
+            btns.addView(out, bl);
+            box.addView(btns);
+            gap(8);
+            box.addView(status);
+        } else {
+            note("Sign in with your cloudgaze email and password to show your classes and homework, and to set this launcher up from cloudgaze on your computer.");
+            gap(10);
+            EditText em = field("Email", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+            EditText pw = field("Password", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            TextView go = Ui.button(this, "Sign in");
+            TextView status = Ui.text(this, "", 13, Ui.C3, Ui.REGULAR);
+            go.setOnClickListener(v -> {
+                status.setText("Signing in\u2026");
+                String e1 = em.getText().toString(), p1 = pw.getText().toString();
+                new Thread(() -> {
+                    String m = null;
+                    try { Account.signIn(prefs, e1, p1); Account.fetch(prefs); }
+                    catch (Exception e) { m = e.getMessage() == null ? "Couldn\u2019t sign in." : e.getMessage(); if (m.startsWith("HTTP") || m.contains("Unable to resolve")) m = "Couldn\u2019t reach cloudgaze. Check your internet."; }
+                    String mm = m;
+                    runOnUiThread(() -> { if (mm == null) rebuild(); else status.setText(mm); });
+                }).start();
+            });
+            box.addView(em, new LinearLayout.LayoutParams(-1, -2));
+            gap(8);
+            box.addView(pw, new LinearLayout.LayoutParams(-1, -2));
+            gap(10);
+            box.addView(go, new LinearLayout.LayoutParams(-2, -2));
+            gap(8);
+            box.addView(status);
+        }
+
+        Config cfg = new Config(this, prefs);
+        if (cfg.fromAccount) {
+            head("Home screen");
+            note("Your clock, home screen widgets and app list style are set in cloudgaze on your computer: Settings \u2192 Phone launcher. Changes show up here within a few minutes, or tap Sync now.");
+            footer();
+            return;
+        }
+
         head("App list");
         row("Style", Ui.seg(this, new String[][] { { "list", "List" }, { "search", "Search" }, { "grid", "Icons" } },
             prefs.getString("drawer", "list"), v -> prefs.edit().putString("drawer", v).apply()));
@@ -73,6 +134,7 @@ public class SettingsActivity extends Activity {
             v -> prefs.edit().putBoolean("seconds", v.equals("on")).apply()));
 
         head("Weather");
+        if (Account.signedIn(prefs)) note("Signed in: the weather uses the location you set in cloudgaze.");
         row("Units", Ui.seg(this, new String[][] { { "f", "°F" }, { "c", "°C" } }, prefs.getString("unit", Weather.defaultUnit()),
             v -> prefs.edit().putString("unit", v).putLong("wxAt", 0).putString("wxText", "").apply()));
 
@@ -127,12 +189,31 @@ public class SettingsActivity extends Activity {
         head("Tips");
         note("Tap the clock to open your alarms. Tap the date to open your calendar. Hold empty space on the home screen to come back here.");
 
+        footer();
+    }
+
+    private void footer() {
         gap(30);
         String ver = "";
         try { ver = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception e) {}
         TextView foot = Ui.text(this, "cloudgaze launcher " + ver + " · made by Stratus1221", 12, Ui.C4, Ui.REGULAR);
         foot.setGravity(Gravity.CENTER);
         box.addView(foot, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private void rebuild() { box.removeAllViews(); build(); }
+
+    private EditText field(String hint, int type) {
+        EditText e = new EditText(this);
+        e.setHint(hint);
+        e.setHintTextColor(0xFF555555);
+        e.setTextColor(Ui.C1);
+        e.setTextSize(16);
+        e.setSingleLine(true);
+        e.setInputType(type);
+        e.setBackground(Ui.box(this, 0, Ui.LINE, 8));
+        e.setPadding(dp(12), dp(10), dp(12), dp(10));
+        return e;
     }
 
     private String placeText() {

@@ -1,16 +1,9 @@
 package io.github.stratus1221.cloudgaze.launcher;
 
-import android.content.SharedPreferences;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
 /** Weather from Open-Meteo (free, no account), the same source cloudgaze uses. Call these off the main thread. */
@@ -41,25 +34,10 @@ final class Weather {
         }
     }
 
-    static String get(String url) throws Exception {
-        HttpURLConnection h = (HttpURLConnection) new URL(url).openConnection();
-        h.setConnectTimeout(10000);
-        h.setReadTimeout(10000);
-        try (BufferedReader r = new BufferedReader(new InputStreamReader(h.getInputStream(), StandardCharsets.UTF_8))) {
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = r.readLine()) != null) sb.append(line);
-            return sb.toString();
-        } finally {
-            h.disconnect();
-        }
-    }
+    static String get(String url) throws Exception { return Net.get(url); }
 
     /** "34° · Mostly clear · 39° / 27°" */
-    static String now(SharedPreferences p) throws Exception {
-        float lat = p.getFloat("lat", Float.NaN), lon = p.getFloat("lon", Float.NaN);
-        if (Float.isNaN(lat)) return null;
-        boolean f = "f".equals(p.getString("unit", defaultUnit()));
+    static String now(double lat, double lon, boolean f) throws Exception {
         String url = String.format(Locale.ROOT,
             "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=temperature_2m,weather_code" +
             "&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1%s",
@@ -71,7 +49,7 @@ final class Weather {
         long hi = Math.round(d.getJSONArray("temperature_2m_max").getDouble(0));
         long lo = Math.round(d.getJSONArray("temperature_2m_min").getDouble(0));
         String desc = describe(cur.getInt("weather_code"));
-        return t + "°" + (desc.isEmpty() ? "" : " · " + desc) + " · " + hi + "° / " + lo + "°";
+        return t + "\u00b0" + (desc.isEmpty() ? "" : " \u00b7 " + desc) + " \u00b7 " + hi + "\u00b0 / " + lo + "\u00b0";
     }
 
     /** Find a place by city name or US ZIP code. Returns {name, lat, lon} or null. */

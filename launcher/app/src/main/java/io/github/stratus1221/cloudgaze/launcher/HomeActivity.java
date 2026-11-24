@@ -17,7 +17,6 @@ import android.text.Editable;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.text.TextWatcher;
-import android.text.format.DateFormat;
 import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -40,8 +39,10 @@ import android.widget.PopupMenu;
 import android.widget.SectionIndexer;
 import android.widget.TextView;
 
+import org.json.JSONObject;
+
 import java.time.LocalDate;
-import java.time.LocalTime;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -76,6 +77,7 @@ public class HomeActivity extends Activity {
         buildHome();
         buildDrawer();
         setContentView(root);
+        renderHome();
         edgeToEdge();
 
         gestures = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
@@ -133,7 +135,13 @@ public class HomeActivity extends Activity {
         if (drawerOpen) refreshDrawer();
     }
 
-    // ---------- home: clock, date, weather, favorites ----------
+    // ---------- home: widgets in the order you picked ----------
+
+    private Config cfg;
+    private String builtKey = "";
+    private TextView classMain, classNext, abday;
+    private LinearLayout hwBox;
+    private String hwKey = "";
 
     private void buildHome() {
         home = new LinearLayout(this);
@@ -141,94 +149,236 @@ public class HomeActivity extends Activity {
         home.setLongClickable(true);
         home.setOnLongClickListener(v -> { openSettings(); return true; });
         root.addView(home, new FrameLayout.LayoutParams(-1, -1));
+    }
 
-        home.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 0.55f));
+    private float size(JSONObject w) { return (float) w.optDouble("size", 1); }
 
-        LinearLayout time = new LinearLayout(this);
-        time.setOrientation(LinearLayout.HORIZONTAL);
-        time.setGravity(Gravity.CENTER_HORIZONTAL);
-        time.setBaselineAligned(true);
-        clock = Ui.text(this, "", 84, Ui.C1, Ui.THIN);
-        secs = Ui.text(this, "", 26, Ui.C3, Ui.THIN);
-        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-2, -2);
-        sp.leftMargin = dp(6);
-        time.addView(clock);
-        time.addView(secs, sp);
-        time.setOnClickListener(v -> open(new Intent(AlarmClock.ACTION_SHOW_ALARMS)));
-        home.addView(time, new LinearLayout.LayoutParams(-1, -2));
-
-        date = Ui.text(this, "", 13, 0xFF8A8A8A, Ui.LIGHT);
-        date.setLetterSpacing(0.14f);
-        date.setGravity(Gravity.CENTER);
-        date.setOnClickListener(v -> open(new Intent(Intent.ACTION_VIEW, CalendarContract.CONTENT_URI.buildUpon().appendPath("time").build())));
-        LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(-1, -2);
-        dl.topMargin = dp(16);
-        home.addView(date, dl);
-
-        weather = Ui.text(this, "", 15, 0xFFAAAAAA, Ui.LIGHT);
-        weather.setGravity(Gravity.CENTER);
-        weather.setLetterSpacing(0.03f);
-        weather.setPadding(0, dp(10), 0, dp(10));
-        weather.setOnClickListener(v -> {
-            if (Float.isNaN(prefs.getFloat("lat", Float.NaN))) openSettings();
-            else loadWeather(true);
-        });
-        home.addView(weather, new LinearLayout.LayoutParams(-1, -2));
-
-        home.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 1f));
-
-        favBox = new LinearLayout(this);
-        favBox.setOrientation(LinearLayout.VERTICAL);
-        home.addView(favBox, new LinearLayout.LayoutParams(-1, -2));
-
+    /** Rebuilds the home screen when its setup changed. */
+    private void renderHome() {
+        cfg = new Config(this, prefs);
+        if (cfg.key.equals(builtKey)) return;
+        builtKey = cfg.key;
+        home.removeAllViews();
+        clock = secs = date = weather = classMain = classNext = abday = null;
+        hwBox = null; favBox = null; hwKey = "";
+        boolean flexible = false;
+        home.addView(new View(this), new LinearLayout.LayoutParams(-1, dp(56)));
+        for (int i = 0; i < cfg.home.length(); i++) {
+            JSONObject w = cfg.home.optJSONObject(i);
+            if (w == null || !w.optBoolean("on", false)) continue;
+            float z = size(w);
+            switch (w.optString("type")) {
+                case "clock": {
+                    LinearLayout time = new LinearLayout(this);
+                    time.setOrientation(LinearLayout.HORIZONTAL);
+                    time.setGravity(Gravity.CENTER_HORIZONTAL);
+                    time.setBaselineAligned(true);
+                    clock = Ui.text(this, "", 84 * z, Ui.C1, Ui.THIN);
+                    secs = Ui.text(this, "", 26 * z, Ui.C3, Ui.THIN);
+                    LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-2, -2);
+                    sp.leftMargin = dp(6);
+                    time.addView(clock);
+                    time.addView(secs, sp);
+                    time.setOnClickListener(v -> open(new Intent(AlarmClock.ACTION_SHOW_ALARMS)));
+                    add(time, 0);
+                    break;
+                }
+                case "date":
+                    date = Ui.text(this, "", 13 * z, 0xFF8A8A8A, Ui.LIGHT);
+                    date.setLetterSpacing(0.14f);
+                    date.setGravity(Gravity.CENTER);
+                    date.setOnClickListener(v -> open(new Intent(Intent.ACTION_VIEW, CalendarContract.CONTENT_URI.buildUpon().appendPath("time").build())));
+                    add(date, 16);
+                    break;
+                case "weather":
+                    weather = Ui.text(this, "", 15 * z, 0xFFAAAAAA, Ui.LIGHT);
+                    weather.setGravity(Gravity.CENTER);
+                    weather.setLetterSpacing(0.03f);
+                    weather.setPadding(0, dp(10), 0, dp(10));
+                    weather.setOnClickListener(v -> { if (!cfg.hasWeatherPlace()) openSettings(); else loadWeather(true); });
+                    add(weather, 0);
+                    break;
+                case "classes": {
+                    LinearLayout box = new LinearLayout(this);
+                    box.setOrientation(LinearLayout.VERTICAL);
+                    box.setGravity(Gravity.CENTER_HORIZONTAL);
+                    classMain = Ui.text(this, "", 19 * z, 0xFFCFCFCF, Ui.LIGHT);
+                    classMain.setGravity(Gravity.CENTER);
+                    classMain.setLetterSpacing(0.04f);
+                    classNext = Ui.text(this, "", 13 * z, Ui.C3, Ui.LIGHT);
+                    classNext.setGravity(Gravity.CENTER);
+                    classNext.setLetterSpacing(0.04f);
+                    classNext.setLineSpacing(dp(3), 1f);
+                    LinearLayout.LayoutParams nl = new LinearLayout.LayoutParams(-1, -2);
+                    nl.topMargin = dp(6);
+                    box.addView(classMain, new LinearLayout.LayoutParams(-1, -2));
+                    box.addView(classNext, nl);
+                    add(box, 18);
+                    break;
+                }
+                case "abday":
+                    abday = Ui.text(this, "", 22 * z, Ui.C2, Ui.LIGHT);
+                    abday.setGravity(Gravity.CENTER);
+                    abday.setLetterSpacing(0.06f);
+                    add(abday, 14);
+                    break;
+                case "homework":
+                    hwBox = new LinearLayout(this);
+                    hwBox.setOrientation(LinearLayout.VERTICAL);
+                    hwBox.setTag(z);
+                    add(hwBox, 22);
+                    break;
+                case "space":
+                    home.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 1f));
+                    flexible = true;
+                    break;
+                case "favorites":
+                    favBox = new LinearLayout(this);
+                    favBox.setOrientation(LinearLayout.VERTICAL);
+                    favBox.setTag(z);
+                    add(favBox, 18);
+                    break;
+            }
+        }
+        if (!flexible) home.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 1f));
         hint = Ui.text(this, "swipe up for apps · hold for settings", 11, Ui.C4, Ui.REGULAR);
         hint.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams hl = new LinearLayout.LayoutParams(-1, -2);
-        hl.topMargin = dp(28);
-        home.addView(hint, hl);
+        hint.setVisibility(prefs.getBoolean("learned", false) ? View.GONE : View.VISIBLE);
+        add(hint, 24);
+        lastWeather = 0;
+        weatherFor = "";
+    }
+
+    private void add(View v, int topMarginDp) {
+        LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(-1, -2);
+        l.topMargin = dp(topMarginDp);
+        home.addView(v, l);
     }
 
     private final Runnable ticker = new Runnable() {
         @Override public void run() {
-            boolean showSecs = prefs.getBoolean("seconds", true);
-            String mode = prefs.getString("clock", "");
-            boolean h24 = mode.isEmpty() ? DateFormat.is24HourFormat(HomeActivity.this) : mode.equals("24");
-            LocalTime t = LocalTime.now();
-            int hr = h24 ? t.getHour() : (t.getHour() % 12 == 0 ? 12 : t.getHour() % 12);
-            clock.setText(String.format(Locale.getDefault(), h24 ? "%02d:%02d" : "%d:%02d", hr, t.getMinute()));
-            secs.setText(showSecs ? String.format(Locale.getDefault(), "%02d", t.getSecond()) : "");
-            secs.setVisibility(showSecs ? View.VISIBLE : View.GONE);
-            date.setText(LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.getDefault())).toUpperCase(Locale.getDefault()));
+            LocalDateTime now = LocalDateTime.now();
+            if (clock != null) {
+                int hr = cfg.h24 ? now.getHour() : (now.getHour() % 12 == 0 ? 12 : now.getHour() % 12);
+                clock.setText(String.format(Locale.getDefault(), cfg.h24 ? "%02d:%02d" : "%d:%02d", hr, now.getMinute()));
+                secs.setText(cfg.seconds ? String.format(Locale.getDefault(), "%02d", now.getSecond()) : "");
+                secs.setVisibility(cfg.seconds ? View.VISIBLE : View.GONE);
+            }
+            if (date != null) date.setText(now.toLocalDate().format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.getDefault())).toUpperCase(Locale.getDefault()));
+            Sched sched = cfg.acct == null ? null : new Sched(cfg.acct, cfg.h24);
+            if (classMain != null) {
+                if (sched == null) { classMain.setText(""); classNext.setText("Sign in to your cloudgaze account in settings to see your classes"); }
+                else {
+                    Sched.Status s = sched.status(now);
+                    classMain.setText(s.main);
+                    String more = s.next.isEmpty() ? s.day : s.day.isEmpty() ? s.next : s.next + "  ·  " + s.day;
+                    classNext.setText(more);
+                    classNext.setVisibility(more.isEmpty() ? View.GONE : View.VISIBLE);
+                }
+            }
+            if (abday != null) {
+                if (sched == null) abday.setText("");
+                else {
+                    LocalDate d = now.toLocalDate();
+                    abday.setText(sched.schoolDay(d) ? sched.letter(d) + " Day" : "No school");
+                }
+            }
+            if (hwBox != null && now.getSecond() % 30 == 0 || hwBox != null && hwKey.isEmpty()) renderHomework(sched, now);
             if (System.currentTimeMillis() - lastWeather > 30 * 60 * 1000L) loadWeather(false);
-            long now = System.currentTimeMillis();
-            h.postDelayed(this, showSecs ? 1000 - now % 1000 : 60000 - now % 60000);
+            if (Account.signedIn(prefs) && System.currentTimeMillis() - prefs.getLong("acct_at", 0) > 10 * 60 * 1000L) refreshAccount();
+            long t = System.currentTimeMillis();
+            h.postDelayed(this, cfg.seconds || classMain != null ? 1000 - t % 1000 : 60000 - t % 60000);
         }
     };
 
+    private void renderHomework(Sched sched, LocalDateTime now) {
+        float z = (Float) hwBox.getTag();
+        StringBuilder k = new StringBuilder();
+        List<Sched.Hw> list = sched == null ? new ArrayList<>() : sched.homework(now, 6);
+        for (Sched.Hw x : list) k.append(x.title).append(x.label).append(x.tone).append('|');
+        String key = (sched == null ? "none" : "in") + k;
+        if (key.equals(hwKey)) return;
+        hwKey = key;
+        hwBox.removeAllViews();
+        TextView head = Ui.text(this, "HOMEWORK", 11, Ui.C4, Ui.REGULAR);
+        head.setLetterSpacing(0.12f);
+        hwBox.addView(head);
+        if (sched == null || list.isEmpty()) {
+            TextView t = Ui.text(this, sched == null ? "Sign in to your cloudgaze account in settings to see homework" : "All done", 14 * z, Ui.C4, Ui.LIGHT);
+            t.setPadding(0, dp(8), 0, 0);
+            hwBox.addView(t);
+            return;
+        }
+        for (Sched.Hw x : list) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, dp(7), 0, 0);
+            TextView t = Ui.text(this, x.title, 16 * z, 0xFFCCCCCC, Ui.LIGHT);
+            t.setSingleLine(true);
+            t.setEllipsize(TextUtils.TruncateAt.END);
+            TextView d = Ui.text(this, x.label, 13 * z, x.tone == 2 ? 0xFFC9896A : x.tone == 1 ? 0xFFDDDDDD : Ui.C3, Ui.REGULAR);
+            row.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
+            LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(-2, -2);
+            dl.leftMargin = dp(12);
+            row.addView(d, dl);
+            hwBox.addView(row);
+        }
+    }
+
+    private String weatherFor = "";
+
     private void loadWeather(boolean force) {
-        if (Float.isNaN(prefs.getFloat("lat", Float.NaN))) {
-            weather.setText("Tap to set your weather location");
+        if (weather == null) return;
+        if (!cfg.hasWeatherPlace()) {
+            weather.setText(cfg.acct != null ? "Set a weather location in cloudgaze" : "Tap to set your weather location");
             weather.setTextColor(Ui.C4);
             return;
         }
         weather.setTextColor(0xFFAAAAAA);
+        String wk = cfg.weatherKey();
+        boolean samePlace = wk.equals(prefs.getString("wxKey", ""));
         String cached = prefs.getString("wxText", "");
-        if (!cached.isEmpty() && weather.getText().length() == 0) weather.setText(cached);
-        if (!force && System.currentTimeMillis() - prefs.getLong("wxAt", 0) < 20 * 60 * 1000L) { lastWeather = prefs.getLong("wxAt", 0); return; }
+        if (samePlace && !cached.isEmpty() && weather.getText().length() == 0) weather.setText(cached);
+        weatherFor = wk;
+        if (!force && samePlace && System.currentTimeMillis() - prefs.getLong("wxAt", 0) < 20 * 60 * 1000L) { lastWeather = prefs.getLong("wxAt", 0); return; }
         lastWeather = System.currentTimeMillis();
+        double lat = cfg.lat, lon = cfg.lon;
+        boolean f = cfg.fahrenheit;
         new Thread(() -> {
             try {
-                String s = Weather.now(prefs);
-                if (s == null) return;
-                prefs.edit().putString("wxText", s).putLong("wxAt", System.currentTimeMillis()).apply();
-                runOnUiThread(() -> weather.setText(s));
+                String s = Weather.now(lat, lon, f);
+                prefs.edit().putString("wxText", s).putString("wxKey", wk).putLong("wxAt", System.currentTimeMillis()).apply();
+                runOnUiThread(() -> { if (weather != null) weather.setText(s); });
             } catch (Exception e) {
                 // offline: keep showing the last weather
             }
         }).start();
     }
 
+    private boolean fetching;
+
+    /** Gets your latest cloudgaze settings in the background and redraws if anything changed. */
+    private void refreshAccount() {
+        if (fetching || !Account.signedIn(prefs)) return;
+        fetching = true;
+        prefs.edit().putLong("acct_at", System.currentTimeMillis()).apply();
+        new Thread(() -> {
+            try { Account.fetch(prefs); } catch (Exception e) { /* offline: use the last copy */ }
+            runOnUiThread(() -> {
+                fetching = false;
+                renderHome();
+                cfg = new Config(this, prefs);
+                hwKey = "";
+                renderFavorites();
+                loadWeather(false);
+            });
+        }).start();
+    }
+
     private void renderFavorites() {
+        if (favBox == null) return;
+        float z = (Float) favBox.getTag();
         favBox.removeAllViews();
         List<String> keys = Apps.favorites(prefs);
         boolean any = false;
@@ -236,7 +386,7 @@ public class HomeActivity extends Activity {
             Apps.App a = Apps.find(apps, k);
             if (a == null) continue;
             any = true;
-            TextView t = Ui.text(this, a.label, 21, 0xFFCFCFCF, Ui.LIGHT);
+            TextView t = Ui.text(this, a.label, 21 * z, 0xFFCFCFCF, Ui.LIGHT);
             t.setPadding(0, dp(9), 0, dp(9));
             t.setSingleLine(true);
             t.setEllipsize(TextUtils.TruncateAt.END);
@@ -276,7 +426,7 @@ public class HomeActivity extends Activity {
 
     // ---------- app drawer: list, search only, or icon grid ----------
 
-    private String drawerStyle() { return prefs.getString("drawer", "list"); }
+    private String drawerStyle() { return cfg == null ? "list" : cfg.drawer; }
 
     private void buildDrawer() {
         drawer = new LinearLayout(this);
@@ -380,7 +530,7 @@ public class HomeActivity extends Activity {
         if (drawerOpen) return;
         drawerOpen = true;
         if (!prefs.getBoolean("learned", false)) prefs.edit().putBoolean("learned", true).apply();
-        hint.setVisibility(View.GONE);
+        if (hint != null) hint.setVisibility(View.GONE);
         search.setText("");
         refreshDrawer();
         list.setSelection(0);
@@ -566,11 +716,14 @@ public class HomeActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        hint.setVisibility(prefs.getBoolean("learned", false) ? View.GONE : View.VISIBLE);
+        renderHome();
+        if (hint != null) hint.setVisibility(prefs.getBoolean("learned", false) ? View.GONE : View.VISIBLE);
         renderFavorites();
+        hwKey = "";
         h.removeCallbacks(ticker);
         ticker.run();
         loadWeather(false);
+        if (Account.signedIn(prefs) && System.currentTimeMillis() - prefs.getLong("acct_at", 0) > 60 * 1000L) refreshAccount();
         if (drawerOpen) refreshDrawer();
     }
 
