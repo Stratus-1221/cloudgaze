@@ -241,10 +241,7 @@ public class HomeActivity extends Activity {
             }
         }
         if (!flexible) home.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 1f));
-        hint = Ui.text(this, "swipe up for apps · hold for settings", 11, Ui.C4, Ui.REGULAR);
-        hint.setGravity(Gravity.CENTER);
-        hint.setVisibility(prefs.getBoolean("learned", false) ? View.GONE : View.VISIBLE);
-        add(hint, 24);
+        home.addView(new View(this), new LinearLayout.LayoutParams(-1, dp(12)));
         lastWeather = 0;
         weatherFor = "";
     }

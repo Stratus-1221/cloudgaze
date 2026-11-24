@@ -187,7 +187,7 @@ public class SettingsActivity extends Activity {
         note("Hold any app in the app list and choose Add to favorites. Hold a favorite on the home screen to move or remove it.");
 
         head("Tips");
-        note("Tap the clock to open your alarms. Tap the date to open your calendar. Hold empty space on the home screen to come back here.");
+        note("Swipe up on the home screen for all your apps. Tap the clock to open your alarms. Tap the date to open your calendar. Hold empty space on the home screen to come back here.");
 
         footer();
     }
